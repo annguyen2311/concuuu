@@ -7,7 +7,7 @@ const store = require('../db/store');
 const router = express.Router();
 const ADMIN_JWT_SECRET = config.adminJwtSecret;
 
-const checkAdmin = (req, res, next) => {
+const checkAdmin = async (req, res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
 
@@ -21,7 +21,7 @@ const checkAdmin = (req, res, next) => {
   } catch {
     try {
       const userPayload = jwt.verify(token, config.jwtSecret);
-      const currentUser = store.findUserByUsername(userPayload.username);
+      const currentUser = await store.findUserByUsername(userPayload.username);
       if (!currentUser || currentUser.role !== 'admin') {
         return res.status(403).json({ error: 'Admin role required' });
       }
@@ -49,9 +49,9 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Username and password required' });
     }
 
-    const admin = store.findAdminByLogin(username);
+    const admin = await store.findAdminByLogin(username);
     if (!admin) {
-      const user = store.findUserByLogin(username);
+      const user = await store.findUserByLogin(username);
       if (!user || user.role !== 'admin') {
         return res.status(400).json({ error: 'Admin not found' });
       }
@@ -106,7 +106,7 @@ router.use(checkAdmin);
 
 router.get('/overview', async (req, res) => {
   try {
-    res.json(store.getAdminOverview());
+    res.json(await store.getAdminOverview());
   } catch (err) {
     console.error('Admin overview error:', err.message);
     res.status(500).json({ error: err.message });
@@ -115,7 +115,7 @@ router.get('/overview', async (req, res) => {
 
 router.get('/theme', async (req, res) => {
   try {
-    res.json(store.getAppTheme());
+    res.json(await store.getAppTheme());
   } catch (err) {
     console.error('Admin theme error:', err.message);
     res.status(500).json({ error: err.message });
@@ -124,7 +124,7 @@ router.get('/theme', async (req, res) => {
 
 router.put('/theme', async (req, res) => {
   try {
-    res.json(store.updateAppTheme(req.body || {}));
+    res.json(await store.updateAppTheme(req.body || {}));
   } catch (err) {
     console.error('Admin update theme error:', err.message);
     res.status(500).json({ error: err.message });
@@ -133,12 +133,13 @@ router.put('/theme', async (req, res) => {
 
 router.get('/stats', async (req, res) => {
   try {
-    const overview = store.getAdminOverview();
+    const overview = await store.getAdminOverview();
+    const activities = await store.listActivities();
     res.json({
       totalUsers: overview.totals.users,
       totalPosts: overview.totals.posts,
       totalJobs: overview.totals.jobs,
-      totalActivities: store.listActivities().length,
+      totalActivities: activities.length,
       totals: overview.totals,
       recentActivities: overview.recentActivities,
       topRooms: overview.topRooms,
@@ -152,7 +153,7 @@ router.get('/stats', async (req, res) => {
 
 router.get('/feedback', async (req, res) => {
   try {
-    res.json(store.listFeedback());
+    res.json(await store.listFeedback());
   } catch (err) {
     console.error('Admin feedback error:', err.message);
     res.status(500).json({ error: err.message });
@@ -166,7 +167,7 @@ router.patch('/feedback/:id', async (req, res) => {
       return res.status(400).json({ error: 'Valid feedback id required' });
     }
 
-    const feedback = store.updateFeedbackStatus(id, req.body?.status);
+    const feedback = await store.updateFeedbackStatus(id, req.body?.status);
     if (!feedback) {
       return res.status(404).json({ error: 'Feedback not found or invalid status' });
     }
@@ -185,7 +186,7 @@ router.delete('/feedback/:id', async (req, res) => {
       return res.status(400).json({ error: 'Valid feedback id required' });
     }
 
-    const result = store.deleteFeedback(id);
+    const result = await store.deleteFeedback(id);
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Feedback not found' });
     }
@@ -199,7 +200,7 @@ router.delete('/feedback/:id', async (req, res) => {
 
 router.get('/users', async (req, res) => {
   try {
-    res.json(store.listAdminUsers());
+    res.json(await store.listAdminUsers());
   } catch (err) {
     console.error('Admin users error:', err.message);
     res.status(500).json({ error: err.message });
@@ -208,7 +209,7 @@ router.get('/users', async (req, res) => {
 
 router.patch('/users/:username', async (req, res) => {
   try {
-    const user = store.updateUserByAdmin(req.params.username, req.body || {}, req.admin);
+    const user = await store.updateUserByAdmin(req.params.username, req.body || {}, req.admin);
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -221,10 +222,10 @@ router.patch('/users/:username', async (req, res) => {
 
 router.delete('/users/:username', async (req, res) => {
   try {
-    const result = store.deleteUser(req.params.username, {
+    const result = await store.deleteUser(req.params.username, {
       cascadeContent: req.query.cascadeContent === 'true',
     });
-    if (result.changes === 0) {
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     res.json({ message: 'User deleted successfully', ...result });
@@ -236,8 +237,8 @@ router.delete('/users/:username', async (req, res) => {
 
 router.get('/admins', async (req, res) => {
   try {
-    const admins = store.listAdmins().map(({ password, ...admin }) => admin);
-    res.json(admins);
+    const admins = await store.listAdmins();
+    res.json(admins.map(({ password, ...admin }) => admin));
   } catch (err) {
     console.error('Admin list admins error:', err.message);
     res.status(500).json({ error: err.message });
@@ -254,13 +255,13 @@ router.post('/create-admin', async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
     }
 
-    const existingAdmin = store.findAdminByUsername(username);
+    const existingAdmin = await store.findAdminByUsername(username);
     if (existingAdmin) {
       return res.status(400).json({ error: 'Admin already exists' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const admin = store.createAdmin({
+    const admin = await store.createAdmin({
       username,
       email,
       password: hashedPassword,
@@ -276,7 +277,7 @@ router.post('/create-admin', async (req, res) => {
 
 router.get('/posts', async (req, res) => {
   try {
-    res.json(store.listPosts());
+    res.json(await store.listPosts());
   } catch (err) {
     console.error('Admin posts error:', err.message);
     res.status(500).json({ error: err.message });
@@ -289,11 +290,11 @@ router.delete('/posts/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'Valid post id required' });
     }
-    const result = store.deletePost(id);
-    if (result.changes === 0) {
+    const result = await store.deletePost(id);
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Post not found' });
     }
-    res.json({ message: 'Post deleted successfully', deletedCount: result.changes });
+    res.json({ message: 'Post deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete post error:', err.message);
     res.status(500).json({ error: err.message });
@@ -302,7 +303,7 @@ router.delete('/posts/:id', async (req, res) => {
 
 router.get('/jobs', async (req, res) => {
   try {
-    res.json(store.listJobs());
+    res.json(await store.listJobs());
   } catch (err) {
     console.error('Admin jobs error:', err.message);
     res.status(500).json({ error: err.message });
@@ -315,11 +316,11 @@ router.delete('/jobs/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'Valid job id required' });
     }
-    const result = store.deleteJob(id);
-    if (result.changes === 0) {
+    const result = await store.deleteJob(id);
+    if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Job not found' });
     }
-    res.json({ message: 'Job deleted successfully', deletedCount: result.changes });
+    res.json({ message: 'Job deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete job error:', err.message);
     res.status(500).json({ error: err.message });
@@ -328,7 +329,7 @@ router.delete('/jobs/:id', async (req, res) => {
 
 router.get('/rooms', async (req, res) => {
   try {
-    res.json(store.listAdminRooms());
+    res.json(await store.listAdminRooms());
   } catch (err) {
     console.error('Admin rooms error:', err.message);
     res.status(500).json({ error: err.message });
@@ -342,7 +343,7 @@ router.post('/rooms', async (req, res) => {
       return res.status(400).json({ error: 'Room name required' });
     }
 
-    const room = store.createPublicRoom({
+    const room = await store.createPublicRoom({
       name,
       icon,
       category,
@@ -365,14 +366,14 @@ router.post('/rooms', async (req, res) => {
 router.get('/rooms/:roomId/messages', async (req, res) => {
   try {
     const limit = Number.parseInt(req.query.limit, 10);
-    const room = store.findRoomById(req.params.roomId, req.admin?.username);
+    const room = await store.findRoomById(req.params.roomId, req.admin?.username);
     if (!room) {
       return res.status(404).json({ error: 'Room not found' });
     }
 
     res.json({
       room,
-      messages: store.listMessagesByRoom(req.params.roomId, {
+      messages: await store.listMessagesByRoom(req.params.roomId, {
         limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 300) : 150,
       }),
     });
@@ -384,7 +385,7 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
 
 router.delete('/rooms/:roomId', async (req, res) => {
   try {
-    const result = store.deleteRoom(req.params.roomId);
+    const result = await store.deleteRoom(req.params.roomId);
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Room not found' });
     }
@@ -397,7 +398,7 @@ router.delete('/rooms/:roomId', async (req, res) => {
 
 router.get('/announcements', async (req, res) => {
   try {
-    res.json(store.listAnnouncements());
+    res.json(await store.listAnnouncements());
   } catch (err) {
     console.error('Admin announcements error:', err.message);
     res.status(500).json({ error: err.message });
@@ -411,7 +412,7 @@ router.post('/announcements', async (req, res) => {
       return res.status(400).json({ error: 'Title required' });
     }
 
-    const announcement = store.createAnnouncement({
+    const announcement = await store.createAnnouncement({
       title: String(title).trim(),
       body: String(body || '').trim(),
       date: 'Vừa xong',
@@ -432,7 +433,7 @@ router.delete('/announcements/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'Valid announcement id required' });
     }
-    const result = store.deleteAnnouncement(id);
+    const result = await store.deleteAnnouncement(id);
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Announcement not found' });
     }
@@ -445,7 +446,7 @@ router.delete('/announcements/:id', async (req, res) => {
 
 router.get('/events', async (req, res) => {
   try {
-    res.json(store.listEvents());
+    res.json(await store.listEvents());
   } catch (err) {
     console.error('Admin events error:', err.message);
     res.status(500).json({ error: err.message });
@@ -458,7 +459,7 @@ router.post('/events', async (req, res) => {
     if (!String(title || '').trim()) {
       return res.status(400).json({ error: 'Title required' });
     }
-    res.json(store.createEvent({
+    res.json(await store.createEvent({
       icon: icon || '📅',
       title: String(title).trim(),
       date: String(date || '').trim(),
@@ -476,7 +477,7 @@ router.put('/events/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'Valid event id required' });
     }
-    const event = store.updateEvent(id, req.body || {});
+    const event = await store.updateEvent(id, req.body || {});
     if (!event) {
       return res.status(404).json({ error: 'Event not found' });
     }
@@ -493,7 +494,7 @@ router.delete('/events/:id', async (req, res) => {
     if (!id) {
       return res.status(400).json({ error: 'Valid event id required' });
     }
-    const result = store.deleteEvent(id);
+    const result = await store.deleteEvent(id);
     if (result.deletedCount === 0) {
       return res.status(404).json({ error: 'Event not found' });
     }

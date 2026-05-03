@@ -17,13 +17,17 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Password must be at least 6 characters' });
         }
 
-        const existingUser = store.findUserByUsername(username) || store.findUserByEmail(email);
+        const [existingByUsername, existingByEmail] = await Promise.all([
+            store.findUserByUsername(username),
+            store.findUserByEmail(email),
+        ]);
+        const existingUser = existingByUsername || existingByEmail;
         if (existingUser) {
             return res.status(400).json({ error: existingUser.username === username ? 'Username already exists' : 'Email already exists' });
         }
 
         const hashed = await bcrypt.hash(password, 10);
-        const user = store.createUser({ username, email, password: hashed });
+        const user = await store.createUser({ username, email, password: hashed });
         res.json({
             msg: 'OK',
             user: {
@@ -45,7 +49,7 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        const user = store.findUserByLogin(username);
+        const user = await store.findUserByLogin(username);
         if (!user) {
             return res.status(400).json({ error: 'User not found' });
         }
@@ -85,15 +89,15 @@ router.post('/login', async (req, res) => {
 
 router.get('/top-users', async (req, res) => {
     try {
-        const users = store.listTopUsers(5).map(user => ({
+        const users = await store.listTopUsers(5);
+        res.json(users.map(user => ({
             username: user.username,
             reputation: user.reputation,
             level: user.level,
             levelNumber: user.levelNumber,
             avatar: user.avatar,
             isOwner: user.isOwner
-        }));
-        res.json(users);
+        })));
     } catch (e) {
         console.error('❌ Top users error:', e.message);
         res.status(500).json({ error: e.message });
@@ -102,7 +106,7 @@ router.get('/top-users', async (req, res) => {
 
 router.get('/statistics', async (req, res) => {
     try {
-        const stats = store.getStatistics();
+        const stats = await store.getStatistics();
         res.json(stats);
     } catch (e) {
         console.error('❌ Statistics error:', e.message);
@@ -112,7 +116,7 @@ router.get('/statistics', async (req, res) => {
 
 router.get('/activities', async (req, res) => {
     try {
-        const activities = store.listActivities();
+        const activities = await store.listActivities();
         res.json(activities);
     } catch (e) {
         console.error('❌ Activities error:', e.message);
@@ -122,7 +126,7 @@ router.get('/activities', async (req, res) => {
 
 router.get('/events', async (req, res) => {
     try {
-        res.json(store.listEvents());
+        res.json(await store.listEvents());
     } catch (e) {
         console.error('❌ Events error:', e.message);
         res.status(500).json({ error: e.message });
@@ -131,7 +135,7 @@ router.get('/events', async (req, res) => {
 
 router.get('/announcements', async (req, res) => {
     try {
-        res.json(store.listAnnouncements());
+        res.json(await store.listAnnouncements());
     } catch (e) {
         console.error('❌ Announcements error:', e.message);
         res.status(500).json({ error: e.message });
@@ -140,7 +144,7 @@ router.get('/announcements', async (req, res) => {
 
 router.get('/theme', async (req, res) => {
     try {
-        res.json(store.getAppTheme());
+        res.json(await store.getAppTheme());
     } catch (e) {
         console.error('❌ Theme error:', e.message);
         res.status(500).json({ error: e.message });

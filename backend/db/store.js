@@ -1,8 +1,9 @@
 const crypto = require('crypto');
 const config = require('../config');
-const db = require('./index');
+const { pool } = require('./index');
 
 const parseJsonArray = (value) => {
+  if (Array.isArray(value)) return value;
   try {
     const parsed = JSON.parse(value || '[]');
     return Array.isArray(parsed) ? parsed : [];
@@ -111,15 +112,17 @@ const mapMessage = (row) => ({
   avatar: row.avatar || (row.username ? row.username.charAt(0).toUpperCase() : 'U'),
 });
 
-const attachMessageMeta = (row) => {
+const attachMessageMeta = async (row) => {
   if (!row) return null;
 
-  const reactions = db.prepare(`
+  const { rows: reactionRows } = await pool.query(`
     SELECT username, reaction, created_at
     FROM message_reactions
-    WHERE message_id = ?
+    WHERE message_id = $1
     ORDER BY created_at ASC, username ASC
-  `).all(row.id).map((reaction) => ({
+  `, [row.id]);
+
+  const reactions = reactionRows.map((reaction) => ({
     username: reaction.username,
     reaction: reaction.reaction,
     createdAt: reaction.created_at,
@@ -176,9 +179,14 @@ const mapFeedback = (row) => {
   };
 };
 
-const attachPostMeta = (row) => {
-  const likes = db.prepare('SELECT username FROM post_likes WHERE post_id = ? ORDER BY created_at ASC, username ASC').all(row.id).map(item => item.username);
-  const comments = db.prepare('SELECT id, username, text, created_at FROM post_comments WHERE post_id = ? ORDER BY created_at ASC, id ASC').all(row.id).map(comment => ({
+const attachPostMeta = async (row) => {
+  const [likesResult, commentsResult] = await Promise.all([
+    pool.query('SELECT username FROM post_likes WHERE post_id = $1 ORDER BY created_at ASC, username ASC', [row.id]),
+    pool.query('SELECT id, username, text, created_at FROM post_comments WHERE post_id = $1 ORDER BY created_at ASC, id ASC', [row.id]),
+  ]);
+
+  const likes = likesResult.rows.map((item) => item.username);
+  const comments = commentsResult.rows.map((comment) => ({
     _id: comment.id,
     user: comment.username,
     text: comment.text,
@@ -223,24 +231,27 @@ const makePrivateRoomId = (username, friendUsername) => {
   return `dm:${first}:${second}`;
 };
 
-const mapRoom = (row, viewer) => {
-  const latest = db.prepare(`
-    SELECT username, message, created_at
-    FROM messages
-    WHERE room = ?
-    ORDER BY created_at DESC, id DESC
-    LIMIT 1
-  `).get(row.id);
+const mapRoom = async (row, viewer) => {
+  const [latestResult, memberRowsResult, countResult] = await Promise.all([
+    pool.query(`
+      SELECT username, message, created_at
+      FROM messages
+      WHERE room = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `, [row.id]),
+    pool.query(`
+      SELECT u.username, u.avatar, crm.role
+      FROM chat_room_members crm
+      LEFT JOIN users u ON u.username = crm.username
+      WHERE crm.room_id = $1
+      ORDER BY CASE crm.role WHEN 'owner' THEN 0 ELSE 1 END, crm.username ASC
+    `, [row.id]),
+    pool.query('SELECT COUNT(*) as count FROM messages WHERE room = $1', [row.id]),
+  ]);
 
-  const memberRows = db.prepare(`
-    SELECT u.username, u.avatar, crm.role
-    FROM chat_room_members crm
-    LEFT JOIN users u ON u.username = crm.username
-    WHERE crm.room_id = ?
-    ORDER BY CASE crm.role WHEN 'owner' THEN 0 ELSE 1 END, crm.username ASC
-  `).all(row.id);
-
-  const members = memberRows.map((member) => ({
+  const latest = latestResult.rows[0];
+  const members = memberRowsResult.rows.map((member) => ({
     username: member.username,
     avatar: member.avatar || (member.username ? member.username.charAt(0).toUpperCase() : 'U'),
     role: member.role || 'member',
@@ -270,52 +281,71 @@ const mapRoom = (row, viewer) => {
     lastMessage: latest?.message || '',
     lastUser: latest?.username || '',
     lastTime: latest?.created_at || '',
-    messageCount: db.prepare('SELECT COUNT(*) as count FROM messages WHERE room = ?').get(row.id).count,
+    messageCount: parseInt(countResult.rows[0].count, 10) || 0,
     members,
   };
 };
 
-function ensureUserSettings(username) {
-  db.prepare('INSERT OR IGNORE INTO user_settings (username, settings_json) VALUES (?, ?)').run(username, '{}');
+async function ensureUserSettings(username) {
+  await pool.query(
+    'INSERT INTO user_settings (username, settings_json) VALUES ($1, $2) ON CONFLICT (username) DO NOTHING',
+    [username, '{}']
+  );
 }
 
 const getRoleForEmail = (email) => (
   String(email || '').trim().toLowerCase() === config.primaryAdminEmail ? 'admin' : 'member'
 );
 
-function createUser({ username, email, password }) {
-  const role = getRoleForEmail(email);
-  const info = db.prepare(`
-    INSERT INTO users (username, email, password, avatar, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(username, email, password, username.charAt(0).toUpperCase(), role);
+async function withTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
-  ensureUserSettings(username);
+async function createUser({ username, email, password }) {
+  const role = getRoleForEmail(email);
+  await pool.query(`
+    INSERT INTO users (username, email, password, avatar, role)
+    VALUES ($1, $2, $3, $4, $5)
+  `, [username, email, password, username.charAt(0).toUpperCase(), role]);
+
+  await ensureUserSettings(username);
   return findUserByUsername(username);
 }
 
-function findUserByUsername(username) {
-  const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  return mapUser(row);
+async function findUserByUsername(username) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
+  return mapUser(rows[0]);
 }
 
-function findUserByEmail(email) {
-  const row = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(String(email || '').trim());
-  return mapUser(row);
+async function findUserByEmail(email) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE lower(email) = lower($1)', [String(email || '').trim()]);
+  return mapUser(rows[0]);
 }
 
-function findUserByLogin(login) {
+async function findUserByLogin(login) {
   const value = String(login || '').trim();
-  const row = db.prepare('SELECT * FROM users WHERE username = ? OR lower(email) = lower(?)').get(value, value);
-  return mapUser(row);
+  const { rows } = await pool.query('SELECT * FROM users WHERE username = $1 OR lower(email) = lower($1)', [value]);
+  return mapUser(rows[0]);
 }
 
-function listUsers() {
-  return db.prepare('SELECT * FROM users ORDER BY created_at DESC, id DESC').all().map(mapUser);
+async function listUsers() {
+  const { rows } = await pool.query('SELECT * FROM users ORDER BY created_at DESC, id DESC');
+  return rows.map(mapUser);
 }
 
-function listAdminUsers() {
-  return db.prepare(`
+async function listAdminUsers() {
+  const { rows } = await pool.query(`
     SELECT
       u.*,
       (SELECT COUNT(*) FROM posts p WHERE p.author = u.username) AS post_count,
@@ -329,60 +359,71 @@ function listAdminUsers() {
       ) AS friend_count
     FROM users u
     ORDER BY u.created_at DESC, u.id DESC
-  `).all().map((row) => ({
+  `);
+
+  return rows.map((row) => ({
     ...mapSafeUser(mapUser(row)),
-    postCount: row.post_count || 0,
-    jobCount: row.job_count || 0,
-    messageCount: row.message_count || 0,
-    bookmarkCount: row.bookmark_count || 0,
-    friendCount: row.friend_count || 0,
+    postCount: parseInt(row.post_count, 10) || 0,
+    jobCount: parseInt(row.job_count, 10) || 0,
+    messageCount: parseInt(row.message_count, 10) || 0,
+    bookmarkCount: parseInt(row.bookmark_count, 10) || 0,
+    friendCount: parseInt(row.friend_count, 10) || 0,
   }));
 }
 
-function getFriendship(username, friendUsername) {
-  return db.prepare(`
+async function getFriendship(username, friendUsername) {
+  const { rows } = await pool.query(`
     SELECT *
     FROM friendships
-    WHERE (requester = ? AND addressee = ?) OR (requester = ? AND addressee = ?)
-  `).get(username, friendUsername, friendUsername, username);
+    WHERE (requester = $1 AND addressee = $2) OR (requester = $2 AND addressee = $1)
+  `, [username, friendUsername]);
+  return rows[0] || null;
 }
 
-function getFriendshipStatus(username, friendUsername) {
-  const friendship = getFriendship(username, friendUsername);
+async function getFriendshipStatus(username, friendUsername) {
+  const friendship = await getFriendship(username, friendUsername);
   if (!friendship) return 'none';
   if (friendship.status === 'accepted') return 'friends';
   if (friendship.requester === username) return 'outgoing';
   return 'incoming';
 }
 
-function listDiscoverableUsers(viewer) {
-  return listUsers()
-    .filter((user) => user.username !== viewer)
-    .filter((user) => canViewProfile(viewer, user.username))
-    .map((user) => ({
-      ...mapSafeUser(user),
-      friendStatus: viewer ? getFriendshipStatus(viewer, user.username) : 'none',
-    }));
+async function listDiscoverableUsers(viewer) {
+  const users = await listUsers();
+  const filtered = users.filter((user) => user.username !== viewer);
+
+  const results = [];
+  for (const user of filtered) {
+    const canView = await canViewProfile(viewer, user.username);
+    if (canView) {
+      const friendStatus = viewer ? await getFriendshipStatus(viewer, user.username) : 'none';
+      results.push({
+        ...mapSafeUser(user),
+        friendStatus,
+      });
+    }
+  }
+  return results;
 }
 
-function canViewProfile(viewer, targetUsername) {
+async function canViewProfile(viewer, targetUsername) {
   if (!targetUsername) return false;
   if (viewer === targetUsername) return true;
 
-  const target = findUserByUsername(targetUsername);
+  const target = await findUserByUsername(targetUsername);
   if (!target) return false;
-  const viewerUser = viewer ? findUserByUsername(viewer) : null;
+  const viewerUser = viewer ? await findUserByUsername(viewer) : null;
   if (viewerUser?.role === 'admin') return true;
 
-  const settings = getUserSettings(targetUsername);
+  const settings = await getUserSettings(targetUsername);
   if (!settings.privateProfile) return true;
-  return viewer ? getFriendshipStatus(viewer, targetUsername) === 'friends' : false;
+  return viewer ? (await getFriendshipStatus(viewer, targetUsername)) === 'friends' : false;
 }
 
-function getPublicUserProfile(username, viewer) {
-  const user = findUserByUsername(username);
+async function getPublicUserProfile(username, viewer) {
+  const user = await findUserByUsername(username);
   if (!user) return null;
-  if (!canViewProfile(viewer, username)) {
+  if (!(await canViewProfile(viewer, username))) {
     return {
       username: user.username,
       avatar: user.avatar,
@@ -393,15 +434,15 @@ function getPublicUserProfile(username, viewer) {
   return mapSafeUser(user);
 }
 
-function sendFriendRequest(username, friendUsername) {
+async function sendFriendRequest(username, friendUsername) {
   if (!username || !friendUsername || username === friendUsername) {
     return null;
   }
-  if (!findUserByUsername(username) || !findUserByUsername(friendUsername)) {
+  if (!await findUserByUsername(username) || !await findUserByUsername(friendUsername)) {
     return null;
   }
 
-  const existing = getFriendship(username, friendUsername);
+  const existing = await getFriendship(username, friendUsername);
   if (existing) {
     if (existing.status === 'pending' && existing.addressee === username) {
       return acceptFriendRequest(username, friendUsername);
@@ -413,130 +454,134 @@ function sendFriendRequest(username, friendUsername) {
     };
   }
 
-  db.prepare('INSERT INTO friendships (requester, addressee, status) VALUES (?, ?, ?)').run(username, friendUsername, 'pending');
+  await pool.query('INSERT INTO friendships (requester, addressee, status) VALUES ($1, $2, $3)', [username, friendUsername, 'pending']);
   return { requester: username, addressee: friendUsername, status: 'pending' };
 }
 
-function acceptFriendRequest(username, requester) {
-  const result = db.prepare(`
+async function acceptFriendRequest(username, requester) {
+  const { rowCount } = await pool.query(`
     UPDATE friendships
-    SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
-    WHERE requester = ? AND addressee = ? AND status = 'pending'
-  `).run(requester, username);
+    SET status = 'accepted', updated_at = NOW()
+    WHERE requester = $1 AND addressee = $2 AND status = 'pending'
+  `, [requester, username]);
 
-  if (result.changes === 0) {
+  if (rowCount === 0) {
     return null;
   }
 
-  ensurePrivateRoom(username, requester);
+  await ensurePrivateRoom(username, requester);
   return { requester, addressee: username, status: 'accepted' };
 }
 
-function removeFriendship(username, friendUsername) {
-  const result = db.prepare(`
+async function removeFriendship(username, friendUsername) {
+  const { rowCount } = await pool.query(`
     DELETE FROM friendships
-    WHERE (requester = ? AND addressee = ?) OR (requester = ? AND addressee = ?)
-  `).run(username, friendUsername, friendUsername, username);
-  return { deletedCount: result.changes };
+    WHERE (requester = $1 AND addressee = $2) OR (requester = $2 AND addressee = $1)
+  `, [username, friendUsername]);
+  return { deletedCount: rowCount };
 }
 
-function listFriendRequests(username) {
-  const incoming = db.prepare(`
-    SELECT u.*
-    FROM friendships f
-    JOIN users u ON u.username = f.requester
-    WHERE f.addressee = ? AND f.status = 'pending'
-    ORDER BY f.created_at DESC
-  `).all(username).map(mapUser).map(mapSafeUser);
+async function listFriendRequests(username) {
+  const [incomingResult, outgoingResult] = await Promise.all([
+    pool.query(`
+      SELECT u.*
+      FROM friendships f
+      JOIN users u ON u.username = f.requester
+      WHERE f.addressee = $1 AND f.status = 'pending'
+      ORDER BY f.created_at DESC
+    `, [username]),
+    pool.query(`
+      SELECT u.*
+      FROM friendships f
+      JOIN users u ON u.username = f.addressee
+      WHERE f.requester = $1 AND f.status = 'pending'
+      ORDER BY f.created_at DESC
+    `, [username]),
+  ]);
 
-  const outgoing = db.prepare(`
-    SELECT u.*
-    FROM friendships f
-    JOIN users u ON u.username = f.addressee
-    WHERE f.requester = ? AND f.status = 'pending'
-    ORDER BY f.created_at DESC
-  `).all(username).map(mapUser).map(mapSafeUser);
+  const incoming = incomingResult.rows.map(mapUser).map(mapSafeUser);
+  const outgoing = outgoingResult.rows.map(mapUser).map(mapSafeUser);
 
   return { incoming, outgoing };
 }
 
-function listFriends(username) {
-  return db.prepare(`
+async function listFriends(username) {
+  const { rows } = await pool.query(`
     SELECT u.*
     FROM friendships f
-    JOIN users u ON u.username = CASE WHEN f.requester = ? THEN f.addressee ELSE f.requester END
-    WHERE (f.requester = ? OR f.addressee = ?) AND f.status = 'accepted'
+    JOIN users u ON u.username = CASE WHEN f.requester = $1 THEN f.addressee ELSE f.requester END
+    WHERE (f.requester = $1 OR f.addressee = $1) AND f.status = 'accepted'
     ORDER BY u.username ASC
-  `).all(username, username, username).map(mapUser).map(mapSafeUser);
+  `, [username]);
+  return rows.map(mapUser).map(mapSafeUser);
 }
 
-function deleteUser(username, { cascadeContent = false } = {}) {
-  const user = findUserByUsername(username);
-  if (!user) return { changes: 0 };
+async function deleteUser(username, { cascadeContent = false } = {}) {
+  const user = await findUserByUsername(username);
+  if (!user) return { deletedCount: 0 };
   if (isPrimaryAdminUser(user)) {
     throw makeHttpError('Primary admin account cannot be deleted', 403);
   }
 
-  const transaction = db.transaction(() => {
+  await withTransaction(async (client) => {
     if (cascadeContent) {
-      db.prepare(`
+      await client.query(`
         DELETE FROM bookmarks
-        WHERE type = 'post' AND post_id IN (SELECT id FROM posts WHERE author = ?)
-      `).run(username);
-      db.prepare('DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE author = ?)').run(username);
-      db.prepare('DELETE FROM post_comments WHERE post_id IN (SELECT id FROM posts WHERE author = ?)').run(username);
-      db.prepare('DELETE FROM posts WHERE author = ?').run(username);
+        WHERE type = 'post' AND post_id IN (SELECT id FROM posts WHERE author = $1)
+      `, [username]);
+      await client.query('DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE author = $1)', [username]);
+      await client.query('DELETE FROM post_comments WHERE post_id IN (SELECT id FROM posts WHERE author = $1)', [username]);
+      await client.query('DELETE FROM posts WHERE author = $1', [username]);
 
-      db.prepare(`
+      await client.query(`
         DELETE FROM bookmarks
-        WHERE type = 'job' AND post_id IN (SELECT id FROM jobs WHERE posted_by = ?)
-      `).run(username);
-      db.prepare('DELETE FROM jobs WHERE posted_by = ?').run(username);
+        WHERE type = 'job' AND post_id IN (SELECT id FROM jobs WHERE posted_by = $1)
+      `, [username]);
+      await client.query('DELETE FROM jobs WHERE posted_by = $1', [username]);
 
-      db.prepare(`
+      await client.query(`
         DELETE FROM message_reactions
-        WHERE message_id IN (SELECT id FROM messages WHERE username = ?)
-      `).run(username);
-      db.prepare('DELETE FROM messages WHERE username = ?').run(username);
+        WHERE message_id IN (SELECT id FROM messages WHERE username = $1)
+      `, [username]);
+      await client.query('DELETE FROM messages WHERE username = $1', [username]);
     }
 
-    db.prepare('DELETE FROM user_tags WHERE user_id = ?').run(user._id);
-    db.prepare('DELETE FROM user_settings WHERE username = ?').run(username);
-    db.prepare('DELETE FROM bookmarks WHERE user_id = ?').run(username);
-    db.prepare('DELETE FROM message_reactions WHERE username = ?').run(username);
-    db.prepare('DELETE FROM friendships WHERE requester = ? OR addressee = ?').run(username, username);
-    db.prepare('DELETE FROM chat_room_members WHERE username = ?').run(username);
-    db.prepare('DELETE FROM activities WHERE username = ?').run(username);
-    db.prepare('DELETE FROM feedback WHERE username = ?').run(username);
-    db.prepare('DELETE FROM users WHERE username = ?').run(username);
+    await client.query('DELETE FROM user_tags WHERE user_id = $1', [user._id]);
+    await client.query('DELETE FROM user_settings WHERE username = $1', [username]);
+    await client.query('DELETE FROM bookmarks WHERE user_id = $1', [username]);
+    await client.query('DELETE FROM message_reactions WHERE username = $1', [username]);
+    await client.query('DELETE FROM friendships WHERE requester = $1 OR addressee = $1', [username]);
+    await client.query('DELETE FROM chat_room_members WHERE username = $1', [username]);
+    await client.query('DELETE FROM activities WHERE username = $1', [username]);
+    await client.query('DELETE FROM feedback WHERE username = $1', [username]);
+    await client.query('DELETE FROM users WHERE username = $1', [username]);
   });
 
-  transaction();
-  return { changes: 1 };
+  return { deletedCount: 1 };
 }
 
-function updateUserProfile(username, updates) {
-  const current = findUserByUsername(username);
+async function updateUserProfile(username, updates) {
+  const current = await findUserByUsername(username);
   if (!current) return null;
 
-  db.prepare(`
+  await pool.query(`
     UPDATE users
-    SET bio = ?, school = ?, major = ?, avatar = ?, cover_image = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE username = ?
-  `).run(
+    SET bio = $1, school = $2, major = $3, avatar = $4, cover_image = $5, updated_at = NOW()
+    WHERE username = $6
+  `, [
     updates.bio ?? current.bio,
     updates.school ?? current.school,
     updates.major ?? current.major,
     updates.avatar ?? current.avatar,
     updates.coverImage ?? current.coverImage,
-    username
-  );
+    username,
+  ]);
 
   return findUserByUsername(username);
 }
 
-function updateUserByAdmin(username, updates = {}, actor = {}) {
-  const current = findUserByUsername(username);
+async function updateUserByAdmin(username, updates = {}, actor = {}) {
+  const current = await findUserByUsername(username);
   if (!current) return null;
 
   const reputation = Number.isFinite(Number(updates.reputation))
@@ -556,11 +601,11 @@ function updateUserByAdmin(username, updates = {}, actor = {}) {
     ? 'admin'
     : (allowedRoles.has(requestedRole) ? requestedRole : current.role);
 
-  db.prepare(`
+  await pool.query(`
     UPDATE users
-    SET reputation = ?, role = ?, bio = ?, school = ?, major = ?, avatar = ?, cover_image = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE username = ?
-  `).run(
+    SET reputation = $1, role = $2, bio = $3, school = $4, major = $5, avatar = $6, cover_image = $7, updated_at = NOW()
+    WHERE username = $8
+  `, [
     reputation,
     role,
     updates.bio ?? current.bio,
@@ -568,78 +613,79 @@ function updateUserByAdmin(username, updates = {}, actor = {}) {
     updates.major ?? current.major,
     updates.avatar ?? current.avatar,
     updates.coverImage ?? current.coverImage,
-    username
-  );
+    username,
+  ]);
 
-  return mapSafeUser(findUserByUsername(username));
+  return mapSafeUser(await findUserByUsername(username));
 }
 
-function updateUserPassword(username, password) {
-  const current = findUserByUsername(username);
+async function updateUserPassword(username, password) {
+  const current = await findUserByUsername(username);
   if (!current) return null;
 
-  db.prepare(`
+  await pool.query(`
     UPDATE users
-    SET password = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE username = ?
-  `).run(password, username);
+    SET password = $1, updated_at = NOW()
+    WHERE username = $2
+  `, [password, username]);
 
   return findUserByUsername(username);
 }
 
-function addUserReputation(username, points = 0) {
+async function addUserReputation(username, points = 0) {
   const delta = Math.round(Number(points) || 0);
   if (!username || delta === 0) {
-    return mapSafeUser(findUserByUsername(username));
+    return mapSafeUser(await findUserByUsername(username));
   }
 
-  db.prepare(`
+  await pool.query(`
     UPDATE users
-    SET reputation = max(0, COALESCE(reputation, 0) + ?), updated_at = CURRENT_TIMESTAMP
-    WHERE username = ?
-  `).run(delta, username);
+    SET reputation = GREATEST(0, COALESCE(reputation, 0) + $1), updated_at = NOW()
+    WHERE username = $2
+  `, [delta, username]);
 
-  return mapSafeUser(findUserByUsername(username));
+  return mapSafeUser(await findUserByUsername(username));
 }
 
-function getUserSettings(username) {
-  ensureUserSettings(username);
-  const row = db.prepare('SELECT settings_json FROM user_settings WHERE username = ?').get(username);
-  if (!row) {
+async function getUserSettings(username) {
+  await ensureUserSettings(username);
+  const { rows } = await pool.query('SELECT settings_json FROM user_settings WHERE username = $1', [username]);
+  if (!rows[0]) {
     return {};
   }
 
   try {
-    const parsed = JSON.parse(row.settings_json || '{}');
+    const parsed = JSON.parse(rows[0].settings_json || '{}');
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function updateUserSettings(username, settings) {
-  ensureUserSettings(username);
-  db.prepare(`
+async function updateUserSettings(username, settings) {
+  await ensureUserSettings(username);
+  await pool.query(`
     UPDATE user_settings
-    SET settings_json = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE username = ?
-  `).run(JSON.stringify(settings || {}), username);
+    SET settings_json = $1, updated_at = NOW()
+    WHERE username = $2
+  `, [JSON.stringify(settings || {}), username]);
   return getUserSettings(username);
 }
 
-function listUserTags(username) {
-  return db.prepare(`
+async function listUserTags(username) {
+  const { rows } = await pool.query(`
     SELECT t.name, t.color
     FROM user_tags ut
     JOIN users u ON u.id = ut.user_id
     JOIN tags t ON t.id = ut.tag_id
-    WHERE u.username = ?
+    WHERE u.username = $1
     ORDER BY t.name ASC
-  `).all(username);
+  `, [username]);
+  return rows;
 }
 
-function replaceUserTags(username, tags) {
-  const user = findUserByUsername(username);
+async function replaceUserTags(username, tags) {
+  const user = await findUserByUsername(username);
   if (!user) {
     return [];
   }
@@ -654,105 +700,120 @@ function replaceUserTags(username, tags) {
       .slice(0, 10)
     : [];
 
-  const transaction = db.transaction(() => {
-    db.prepare('DELETE FROM user_tags WHERE user_id = ?').run(user._id);
+  await withTransaction(async (client) => {
+    await client.query('DELETE FROM user_tags WHERE user_id = $1', [user._id]);
 
     for (const tag of sanitizedTags) {
-      let existingTag = db.prepare('SELECT id FROM tags WHERE name = ?').get(tag.name);
-      if (!existingTag) {
-        const info = db.prepare('INSERT INTO tags (name, color) VALUES (?, ?)').run(tag.name, tag.color);
-        existingTag = { id: info.lastInsertRowid };
+      const { rows: existing } = await client.query('SELECT id FROM tags WHERE name = $1', [tag.name]);
+      let tagId;
+      if (existing.length === 0) {
+        const { rows: inserted } = await client.query(
+          'INSERT INTO tags (name, color) VALUES ($1, $2) RETURNING id',
+          [tag.name, tag.color]
+        );
+        tagId = inserted[0].id;
       } else {
-        db.prepare('UPDATE tags SET color = ? WHERE id = ?').run(tag.color, existingTag.id);
+        tagId = existing[0].id;
+        await client.query('UPDATE tags SET color = $1 WHERE id = $2', [tag.color, tagId]);
       }
 
-      db.prepare('INSERT INTO user_tags (user_id, tag_id) VALUES (?, ?)').run(user._id, existingTag.id);
+      await client.query('INSERT INTO user_tags (user_id, tag_id) VALUES ($1, $2)', [user._id, tagId]);
     }
   });
 
-  transaction();
   return listUserTags(username);
 }
 
-function listTopUsers(limit = 5) {
-  return db.prepare('SELECT * FROM users ORDER BY reputation DESC, username ASC LIMIT ?').all(limit).map(mapUser);
+async function listTopUsers(limit = 5) {
+  const { rows } = await pool.query('SELECT * FROM users ORDER BY reputation DESC, username ASC LIMIT $1', [limit]);
+  return rows.map(mapUser);
 }
 
-function promotePrimaryAdminUser() {
-  db.prepare(`
+async function promotePrimaryAdminUser() {
+  await pool.query(`
     UPDATE users
-    SET role = 'admin', updated_at = CURRENT_TIMESTAMP
-    WHERE lower(email) = ? AND role <> 'admin'
-  `).run(config.primaryAdminEmail);
+    SET role = 'admin', updated_at = NOW()
+    WHERE lower(email) = $1 AND role <> 'admin'
+  `, [config.primaryAdminEmail]);
 }
 
-function createAdmin({ username, email, password, role = 'admin' }) {
-  db.prepare('INSERT INTO admins (username, email, password, role) VALUES (?, ?, ?, ?)').run(username, email, password, role);
+async function createAdmin({ username, email, password, role = 'admin' }) {
+  await pool.query('INSERT INTO admins (username, email, password, role) VALUES ($1, $2, $3, $4)', [username, email, password, role]);
   return findAdminByUsername(username);
 }
 
-function findAdminByUsername(username) {
-  const row = db.prepare('SELECT * FROM admins WHERE username = ?').get(username);
-  return mapAdmin(row);
+async function findAdminByUsername(username) {
+  const { rows } = await pool.query('SELECT * FROM admins WHERE username = $1', [username]);
+  return mapAdmin(rows[0]);
 }
 
-function findAdminByLogin(login) {
+async function findAdminByLogin(login) {
   const value = String(login || '').trim();
-  const row = db.prepare('SELECT * FROM admins WHERE username = ? OR lower(email) = lower(?)').get(value, value);
-  return mapAdmin(row);
+  const { rows } = await pool.query('SELECT * FROM admins WHERE username = $1 OR lower(email) = lower($1)', [value]);
+  return mapAdmin(rows[0]);
 }
 
-function listAdmins() {
-  return db.prepare('SELECT * FROM admins ORDER BY created_at DESC, id DESC').all().map(mapAdmin);
+async function listAdmins() {
+  const { rows } = await pool.query('SELECT * FROM admins ORDER BY created_at DESC, id DESC');
+  return rows.map(mapAdmin);
 }
 
-function createActivity({ username, action, target, icon }) {
-  const info = db.prepare('INSERT INTO activities (username, action, target, icon) VALUES (?, ?, ?, ?)').run(username, action, target, icon);
-  const row = db.prepare('SELECT * FROM activities WHERE id = ?').get(info.lastInsertRowid);
-  return mapActivity(row);
+async function createActivity({ username, action, target, icon }) {
+  const { rows } = await pool.query(
+    'INSERT INTO activities (username, action, target, icon) VALUES ($1, $2, $3, $4) RETURNING *',
+    [username, action, target, icon]
+  );
+  return mapActivity(rows[0]);
 }
 
-function listActivities(limit) {
-  const query = typeof limit === 'number'
-    ? db.prepare('SELECT * FROM activities ORDER BY time DESC, id DESC LIMIT ?').all(limit)
-    : db.prepare('SELECT * FROM activities ORDER BY time DESC, id DESC').all();
-  return query.map(mapActivity);
+async function listActivities(limit) {
+  const { rows } = typeof limit === 'number'
+    ? await pool.query('SELECT * FROM activities ORDER BY time DESC, id DESC LIMIT $1', [limit])
+    : await pool.query('SELECT * FROM activities ORDER BY time DESC, id DESC');
+  return rows.map(mapActivity);
 }
 
-function createPost({ author, title, content }) {
-  const info = db.prepare('INSERT INTO posts (author, title, content) VALUES (?, ?, ?)').run(author, title, content);
-  return findPostById(info.lastInsertRowid);
+async function createPost({ author, title, content }) {
+  const { rows } = await pool.query(
+    'INSERT INTO posts (author, title, content) VALUES ($1, $2, $3) RETURNING id',
+    [author, title, content]
+  );
+  return findPostById(rows[0].id);
 }
 
-function listPosts() {
-  return db.prepare('SELECT * FROM posts ORDER BY created_at DESC, id DESC').all().map(attachPostMeta);
+async function listPosts() {
+  const { rows } = await pool.query('SELECT * FROM posts ORDER BY created_at DESC, id DESC');
+  return Promise.all(rows.map(attachPostMeta));
 }
 
-function listPostsByAuthor(author, limit) {
-  const rows = typeof limit === 'number'
-    ? db.prepare('SELECT * FROM posts WHERE author = ? ORDER BY created_at DESC, id DESC LIMIT ?').all(author, limit)
-    : db.prepare('SELECT * FROM posts WHERE author = ? ORDER BY created_at DESC, id DESC').all(author);
-  return rows.map(attachPostMeta);
+async function listPostsByAuthor(author, limit) {
+  const { rows } = typeof limit === 'number'
+    ? await pool.query('SELECT * FROM posts WHERE author = $1 ORDER BY created_at DESC, id DESC LIMIT $2', [author, limit])
+    : await pool.query('SELECT * FROM posts WHERE author = $1 ORDER BY created_at DESC, id DESC', [author]);
+  return Promise.all(rows.map(attachPostMeta));
 }
 
-function findPostById(id) {
-  const row = db.prepare('SELECT * FROM posts WHERE id = ?').get(id);
-  return row ? attachPostMeta(row) : null;
+async function findPostById(id) {
+  const { rows } = await pool.query('SELECT * FROM posts WHERE id = $1', [id]);
+  return rows[0] ? attachPostMeta(rows[0]) : null;
 }
 
-function togglePostLike(postId, username) {
-  const existing = db.prepare('SELECT 1 FROM post_likes WHERE post_id = ? AND username = ?').get(postId, username);
-  if (existing) {
-    db.prepare('DELETE FROM post_likes WHERE post_id = ? AND username = ?').run(postId, username);
+async function togglePostLike(postId, username) {
+  const { rows: existing } = await pool.query('SELECT 1 FROM post_likes WHERE post_id = $1 AND username = $2', [postId, username]);
+  if (existing.length > 0) {
+    await pool.query('DELETE FROM post_likes WHERE post_id = $1 AND username = $2', [postId, username]);
   } else {
-    db.prepare('INSERT INTO post_likes (post_id, username) VALUES (?, ?)').run(postId, username);
+    await pool.query('INSERT INTO post_likes (post_id, username) VALUES ($1, $2)', [postId, username]);
   }
   return findPostById(postId);
 }
 
-function addPostComment(postId, { user, text }) {
-  const info = db.prepare('INSERT INTO post_comments (post_id, username, text) VALUES (?, ?, ?)').run(postId, user, text);
-  const row = db.prepare('SELECT id, username, text, created_at FROM post_comments WHERE id = ?').get(info.lastInsertRowid);
+async function addPostComment(postId, { user, text }) {
+  const { rows } = await pool.query(
+    'INSERT INTO post_comments (post_id, username, text) VALUES ($1, $2, $3) RETURNING id, username, text, created_at',
+    [postId, user, text]
+  );
+  const row = rows[0];
   return {
     _id: row.id,
     user: row.username,
@@ -761,64 +822,69 @@ function addPostComment(postId, { user, text }) {
   };
 }
 
-function deletePost(postId) {
-  const transaction = db.transaction(() => {
-    db.prepare("DELETE FROM bookmarks WHERE type = 'post' AND post_id = ?").run(postId);
-    db.prepare('DELETE FROM post_likes WHERE post_id = ?').run(postId);
-    db.prepare('DELETE FROM post_comments WHERE post_id = ?').run(postId);
-    return db.prepare('DELETE FROM posts WHERE id = ?').run(postId);
+async function deletePost(postId) {
+  return withTransaction(async (client) => {
+    await client.query("DELETE FROM bookmarks WHERE type = 'post' AND post_id = $1", [postId]);
+    await client.query('DELETE FROM post_likes WHERE post_id = $1', [postId]);
+    await client.query('DELETE FROM post_comments WHERE post_id = $1', [postId]);
+    const { rowCount } = await client.query('DELETE FROM posts WHERE id = $1', [postId]);
+    return { deletedCount: rowCount };
   });
-  return transaction();
 }
 
-function createJob({ title, company, salary, type, level, location, skills, description, postedBy }) {
-  const info = db.prepare(`
+async function createJob({ title, company, salary, type, level, location, skills, description, postedBy }) {
+  const { rows } = await pool.query(`
     INSERT INTO jobs (title, company, salary, type, level, location, skills, description, posted_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(title, company, salary, type, level, location, JSON.stringify(skills || []), description, postedBy);
-  return findJobById(info.lastInsertRowid);
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id
+  `, [title, company, salary, type, level, location, JSON.stringify(skills || []), description, postedBy]);
+  return findJobById(rows[0].id);
 }
 
-function listJobs() {
-  return db.prepare('SELECT * FROM jobs ORDER BY posted_at DESC, id DESC').all().map(mapJob);
+async function listJobs() {
+  const { rows } = await pool.query('SELECT * FROM jobs ORDER BY posted_at DESC, id DESC');
+  return rows.map(mapJob);
 }
 
-function findJobById(id) {
-  const row = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id);
-  return row ? mapJob(row) : null;
+async function findJobById(id) {
+  const { rows } = await pool.query('SELECT * FROM jobs WHERE id = $1', [id]);
+  return rows[0] ? mapJob(rows[0]) : null;
 }
 
-function deleteJob(id) {
-  const transaction = db.transaction(() => {
-    db.prepare("DELETE FROM bookmarks WHERE type = 'job' AND post_id = ?").run(id);
-    return db.prepare('DELETE FROM jobs WHERE id = ?').run(id);
+async function deleteJob(id) {
+  return withTransaction(async (client) => {
+    await client.query("DELETE FROM bookmarks WHERE type = 'job' AND post_id = $1", [id]);
+    const { rowCount } = await client.query('DELETE FROM jobs WHERE id = $1', [id]);
+    return { deletedCount: rowCount };
   });
-  return transaction();
 }
 
-function createBookmark({ userId, postId, type }) {
-  const info = db.prepare('INSERT INTO bookmarks (user_id, post_id, type) VALUES (?, ?, ?)').run(userId, postId, type);
-  const row = db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(info.lastInsertRowid);
-  return mapBookmark(row);
+async function createBookmark({ userId, postId, type }) {
+  const { rows } = await pool.query(
+    'INSERT INTO bookmarks (user_id, post_id, type) VALUES ($1, $2, $3) RETURNING *',
+    [userId, postId, type]
+  );
+  return mapBookmark(rows[0]);
 }
 
-function findBookmark({ userId, postId, type }) {
-  const row = db.prepare('SELECT * FROM bookmarks WHERE user_id = ? AND post_id = ? AND type = ?').get(userId, postId, type);
-  return mapBookmark(row);
+async function findBookmark({ userId, postId, type }) {
+  const { rows } = await pool.query('SELECT * FROM bookmarks WHERE user_id = $1 AND post_id = $2 AND type = $3', [userId, postId, type]);
+  return mapBookmark(rows[0]);
 }
 
-function deleteBookmark({ userId, postId, type }) {
-  const result = type
-    ? db.prepare('DELETE FROM bookmarks WHERE user_id = ? AND post_id = ? AND type = ?').run(userId, postId, type)
-    : db.prepare('DELETE FROM bookmarks WHERE user_id = ? AND post_id = ?').run(userId, postId);
-  return { deletedCount: result.changes };
+async function deleteBookmark({ userId, postId, type }) {
+  const { rowCount } = type
+    ? await pool.query('DELETE FROM bookmarks WHERE user_id = $1 AND post_id = $2 AND type = $3', [userId, postId, type])
+    : await pool.query('DELETE FROM bookmarks WHERE user_id = $1 AND post_id = $2', [userId, postId]);
+  return { deletedCount: rowCount };
 }
 
-function listBookmarksByUser(userId) {
-  return db.prepare('SELECT * FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC, id DESC').all(userId).map(mapBookmark);
+async function listBookmarksByUser(userId) {
+  const { rows } = await pool.query('SELECT * FROM bookmarks WHERE user_id = $1 ORDER BY created_at DESC, id DESC', [userId]);
+  return rows.map(mapBookmark);
 }
 
-function createFeedback({ username, type = 'suggestion', title, message, rating = 5 }) {
+async function createFeedback({ username, type = 'suggestion', title, message, rating = 5 }) {
   const allowedTypes = new Set(['bug', 'suggestion', 'performance', 'security', 'content', 'other']);
   const cleanType = allowedTypes.has(String(type || '').trim()) ? String(type).trim() : 'suggestion';
   const cleanTitle = String(title || '').trim().slice(0, 140);
@@ -831,143 +897,156 @@ function createFeedback({ username, type = 'suggestion', title, message, rating 
     return null;
   }
 
-  const info = db.prepare(`
+  const { rows } = await pool.query(`
     INSERT INTO feedback (username, type, title, message, rating)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(username, cleanType, cleanTitle, cleanMessage, cleanRating);
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id
+  `, [username, cleanType, cleanTitle, cleanMessage, cleanRating]);
 
-  return findFeedbackById(info.lastInsertRowid);
+  return findFeedbackById(rows[0].id);
 }
 
-function findFeedbackById(id) {
-  const row = db.prepare('SELECT * FROM feedback WHERE id = ?').get(id);
-  return mapFeedback(row);
+async function findFeedbackById(id) {
+  const { rows } = await pool.query('SELECT * FROM feedback WHERE id = $1', [id]);
+  return mapFeedback(rows[0]);
 }
 
-function listFeedback({ username } = {}) {
-  const rows = username
-    ? db.prepare('SELECT * FROM feedback WHERE username = ? ORDER BY created_at DESC, id DESC').all(username)
-    : db.prepare('SELECT * FROM feedback ORDER BY created_at DESC, id DESC').all();
+async function listFeedback({ username } = {}) {
+  const { rows } = username
+    ? await pool.query('SELECT * FROM feedback WHERE username = $1 ORDER BY created_at DESC, id DESC', [username])
+    : await pool.query('SELECT * FROM feedback ORDER BY created_at DESC, id DESC');
   return rows.map(mapFeedback);
 }
 
-function updateFeedbackStatus(id, status) {
+async function updateFeedbackStatus(id, status) {
   const allowedStatuses = new Set(['new', 'reviewing', 'resolved', 'closed']);
   const cleanStatus = allowedStatuses.has(String(status || '').trim()) ? String(status).trim() : null;
   if (!cleanStatus) {
     return null;
   }
 
-  const result = db.prepare(`
+  const { rowCount } = await pool.query(`
     UPDATE feedback
-    SET status = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(cleanStatus, id);
+    SET status = $1, updated_at = NOW()
+    WHERE id = $2
+  `, [cleanStatus, id]);
 
-  return result.changes > 0 ? findFeedbackById(id) : null;
+  return rowCount > 0 ? findFeedbackById(id) : null;
 }
 
-function deleteFeedback(id) {
-  const result = db.prepare('DELETE FROM feedback WHERE id = ?').run(id);
-  return { deletedCount: result.changes };
+async function deleteFeedback(id) {
+  const { rowCount } = await pool.query('DELETE FROM feedback WHERE id = $1', [id]);
+  return { deletedCount: rowCount };
 }
 
-function createMessage({ room, username, message }) {
-  const info = db.prepare('INSERT INTO messages (room, username, message) VALUES (?, ?, ?)').run(room, username, message);
-  const row = db.prepare(`
+async function createMessage({ room, username, message }) {
+  const { rows } = await pool.query(
+    'INSERT INTO messages (room, username, message) VALUES ($1, $2, $3) RETURNING id',
+    [room, username, message]
+  );
+  const { rows: msgRows } = await pool.query(`
     SELECT m.*, u.avatar
     FROM messages m
     LEFT JOIN users u ON u.username = m.username
-    WHERE m.id = ?
-  `).get(info.lastInsertRowid);
-  return attachMessageMeta(row);
+    WHERE m.id = $1
+  `, [rows[0].id]);
+  return attachMessageMeta(msgRows[0]);
 }
 
-function listMessagesByRoom(room, { limit = 50, before } = {}) {
+async function listMessagesByRoom(room, { limit = 50, before } = {}) {
+  let rows;
   if (before) {
-    return db.prepare(`
+    const result = await pool.query(`
       SELECT m.*, u.avatar
       FROM messages m
       LEFT JOIN users u ON u.username = m.username
-      WHERE m.room = ? AND (m.created_at < ? OR (m.created_at = ? AND m.id < ?))
+      WHERE m.room = $1 AND (m.created_at < $2 OR (m.created_at = $2 AND m.id < $3))
       ORDER BY m.created_at DESC, m.id DESC
-      LIMIT ?
-    `).all(room, before.createdAt, before.createdAt, before.id, limit).map(attachMessageMeta).reverse();
+      LIMIT $4
+    `, [room, before.createdAt, before.id, limit]);
+    rows = result.rows;
+  } else {
+    const result = await pool.query(`
+      SELECT m.*, u.avatar
+      FROM messages m
+      LEFT JOIN users u ON u.username = m.username
+      WHERE m.room = $1
+      ORDER BY m.created_at DESC, m.id DESC
+      LIMIT $2
+    `, [room, limit]);
+    rows = result.rows;
   }
 
-  return db.prepare(`
+  const messages = await Promise.all(rows.map(attachMessageMeta));
+  return messages.reverse();
+}
+
+async function findMessageById(id) {
+  const { rows } = await pool.query(`
     SELECT m.*, u.avatar
     FROM messages m
     LEFT JOIN users u ON u.username = m.username
-    WHERE m.room = ?
-    ORDER BY m.created_at DESC, m.id DESC
-    LIMIT ?
-  `).all(room, limit).map(attachMessageMeta).reverse();
+    WHERE m.id = $1
+  `, [id]);
+  return attachMessageMeta(rows[0]);
 }
 
-function findMessageById(id) {
-  const row = db.prepare(`
-    SELECT m.*, u.avatar
-    FROM messages m
-    LEFT JOIN users u ON u.username = m.username
-    WHERE m.id = ?
-  `).get(id);
-  return attachMessageMeta(row);
-}
-
-function toggleMessageReaction(messageId, { username, reaction }) {
-  const message = findMessageById(messageId);
+async function toggleMessageReaction(messageId, { username, reaction }) {
+  const message = await findMessageById(messageId);
   if (!message) {
     return null;
   }
 
-  const current = db.prepare('SELECT reaction FROM message_reactions WHERE message_id = ? AND username = ?').get(messageId, username);
+  const { rows: current } = await pool.query(
+    'SELECT reaction FROM message_reactions WHERE message_id = $1 AND username = $2',
+    [messageId, username]
+  );
 
-  if (current?.reaction === reaction) {
-    db.prepare('DELETE FROM message_reactions WHERE message_id = ? AND username = ?').run(messageId, username);
-  } else if (current) {
-    db.prepare(`
+  if (current[0]?.reaction === reaction) {
+    await pool.query('DELETE FROM message_reactions WHERE message_id = $1 AND username = $2', [messageId, username]);
+  } else if (current[0]) {
+    await pool.query(`
       UPDATE message_reactions
-      SET reaction = ?, created_at = CURRENT_TIMESTAMP
-      WHERE message_id = ? AND username = ?
-    `).run(reaction, messageId, username);
+      SET reaction = $1, created_at = NOW()
+      WHERE message_id = $2 AND username = $3
+    `, [reaction, messageId, username]);
   } else {
-    db.prepare('INSERT INTO message_reactions (message_id, username, reaction) VALUES (?, ?, ?)').run(messageId, username, reaction);
+    await pool.query('INSERT INTO message_reactions (message_id, username, reaction) VALUES ($1, $2, $3)', [messageId, username, reaction]);
   }
 
   return findMessageById(messageId);
 }
 
-function getDeletedRoomIds() {
-  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'deleted_rooms'").get();
-  if (!row) return new Set();
+async function getDeletedRoomIds() {
+  const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'deleted_rooms'");
+  if (!rows[0]) return new Set();
 
   try {
-    const parsed = JSON.parse(row.value || '[]');
+    const parsed = JSON.parse(rows[0].value || '[]');
     return new Set(Array.isArray(parsed) ? parsed.map(String) : []);
   } catch {
     return new Set();
   }
 }
 
-function saveDeletedRoomIds(roomIds) {
-  db.prepare(`
+async function saveDeletedRoomIds(roomIds) {
+  await pool.query(`
     INSERT INTO app_settings (key, value, updated_at)
-    VALUES ('deleted_rooms', ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-  `).run(JSON.stringify(Array.from(roomIds)));
+    VALUES ('deleted_rooms', $1, NOW())
+    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `, [JSON.stringify(Array.from(roomIds))]);
 }
 
-function markRoomDeleted(roomId) {
-  const deletedRoomIds = getDeletedRoomIds();
+async function markRoomDeleted(roomId) {
+  const deletedRoomIds = await getDeletedRoomIds();
   deletedRoomIds.add(String(roomId));
-  saveDeletedRoomIds(deletedRoomIds);
+  await saveDeletedRoomIds(deletedRoomIds);
 }
 
-function unmarkRoomDeleted(roomId) {
-  const deletedRoomIds = getDeletedRoomIds();
+async function unmarkRoomDeleted(roomId) {
+  const deletedRoomIds = await getDeletedRoomIds();
   if (deletedRoomIds.delete(String(roomId))) {
-    saveDeletedRoomIds(deletedRoomIds);
+    await saveDeletedRoomIds(deletedRoomIds);
   }
 }
 
@@ -976,7 +1055,7 @@ function slugifyRoomId(value) {
     .trim()
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/đ/g, 'd')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
@@ -984,11 +1063,11 @@ function slugifyRoomId(value) {
   return slug || `channel-${Date.now()}`;
 }
 
-function makeUniquePublicRoomId(name) {
+async function makeUniquePublicRoomId(name) {
   const base = slugifyRoomId(name);
   let roomId = base;
   let attempt = 0;
-  while (findRoomById(roomId)) {
+  while (await findRoomById(roomId)) {
     attempt += 1;
     roomId = `${base}-${crypto.randomBytes(2).toString('hex')}`;
     if (attempt > 10) {
@@ -999,40 +1078,41 @@ function makeUniquePublicRoomId(name) {
   return roomId;
 }
 
-function ensureDefaultChatRooms() {
-  const deletedRoomIds = getDeletedRoomIds();
+async function ensureDefaultChatRooms() {
+  const deletedRoomIds = await getDeletedRoomIds();
   const rooms = [
-    { id: 'announcements', name: 'thông-báo', icon: '#', category: 'Bắt đầu', topic: 'Thông báo quan trọng từ cộng đồng', position: 1, isLocked: 1 },
-    { id: 'rules', name: 'quy-định', icon: '#', category: 'Bắt đầu', topic: 'Nội quy và hướng dẫn sử dụng cộng đồng', position: 2, isLocked: 1 },
-    { id: 'general', name: 'Chung', icon: '💬', category: 'Cộng đồng', topic: 'Kênh trò chuyện chung cho sinh viên NTTU', position: 10, isLocked: 0 },
-    { id: 'introductions', name: 'giới-thiệu', icon: '#', category: 'Cộng đồng', topic: 'Tự giới thiệu và làm quen với mọi người', position: 20, isLocked: 0 },
-    { id: 'questions', name: 'hỏi-đáp', icon: '#', category: 'Học tập', topic: 'Đặt câu hỏi học tập và nhờ hỗ trợ', position: 100, isLocked: 0 },
-    { id: 'react', name: 'React', icon: '⚛️', category: 'Học tập', topic: 'Trao đổi React, frontend và UI', position: 110, isLocked: 0 },
-    { id: 'nodejs', name: 'Node.js', icon: '🟢', category: 'Học tập', topic: 'Node.js, backend và API', position: 120, isLocked: 0 },
-    { id: 'python', name: 'Python', icon: '🐍', category: 'Học tập', topic: 'Python, data và automation', position: 130, isLocked: 0 },
-    { id: 'assignments', name: 'bài-tập', icon: '#', category: 'Học tập', topic: 'Trao đổi bài tập, tài liệu và deadline', position: 140, isLocked: 0 },
-    { id: 'webdesign', name: 'Web Design', icon: '🎨', category: 'Thiết kế', topic: 'UI, UX, web design và portfolio', position: 210, isLocked: 0 },
-    { id: 'projects', name: 'dự-án', icon: '#', category: 'Dự án', topic: 'Tìm teammate và khoe sản phẩm đang làm', position: 300, isLocked: 0 },
-    { id: 'internships', name: 'thực-tập', icon: '#', category: 'Việc làm', topic: 'Cơ hội thực tập và kinh nghiệm apply', position: 400, isLocked: 0 },
-    { id: 'career', name: 'career-talk', icon: '#', category: 'Việc làm', topic: 'CV, phỏng vấn và định hướng nghề nghiệp', position: 410, isLocked: 0 },
-    { id: 'events-community', name: 'sự-kiện', icon: '#', category: 'Cộng đồng', topic: 'Sự kiện, workshop và hoạt động sinh viên', position: 500, isLocked: 0 },
-    { id: 'random', name: 'chuyện-phiếm', icon: '#', category: 'Giải trí', topic: 'Nơi trò chuyện nhẹ nhàng ngoài giờ học', position: 900, isLocked: 0 },
+    { id: 'announcements', name: 'thông-báo', icon: '#', category: 'Bắt đầu', topic: 'Thông báo quan trọng từ cộng đồng', position: 1, isLocked: true },
+    { id: 'rules', name: 'quy-định', icon: '#', category: 'Bắt đầu', topic: 'Nội quy và hướng dẫn sử dụng cộng đồng', position: 2, isLocked: true },
+    { id: 'general', name: 'Chung', icon: '💬', category: 'Cộng đồng', topic: 'Kênh trò chuyện chung cho sinh viên NTTU', position: 10, isLocked: false },
+    { id: 'introductions', name: 'giới-thiệu', icon: '#', category: 'Cộng đồng', topic: 'Tự giới thiệu và làm quen với mọi người', position: 20, isLocked: false },
+    { id: 'questions', name: 'hỏi-đáp', icon: '#', category: 'Học tập', topic: 'Đặt câu hỏi học tập và nhờ hỗ trợ', position: 100, isLocked: false },
+    { id: 'react', name: 'React', icon: '⚛️', category: 'Học tập', topic: 'Trao đổi React, frontend và UI', position: 110, isLocked: false },
+    { id: 'nodejs', name: 'Node.js', icon: '🟢', category: 'Học tập', topic: 'Node.js, backend và API', position: 120, isLocked: false },
+    { id: 'python', name: 'Python', icon: '🐍', category: 'Học tập', topic: 'Python, data và automation', position: 130, isLocked: false },
+    { id: 'assignments', name: 'bài-tập', icon: '#', category: 'Học tập', topic: 'Trao đổi bài tập, tài liệu và deadline', position: 140, isLocked: false },
+    { id: 'webdesign', name: 'Web Design', icon: '🎨', category: 'Thiết kế', topic: 'UI, UX, web design và portfolio', position: 210, isLocked: false },
+    { id: 'projects', name: 'dự-án', icon: '#', category: 'Dự án', topic: 'Tìm teammate và khoe sản phẩm đang làm', position: 300, isLocked: false },
+    { id: 'internships', name: 'thực-tập', icon: '#', category: 'Việc làm', topic: 'Cơ hội thực tập và kinh nghiệm apply', position: 400, isLocked: false },
+    { id: 'career', name: 'career-talk', icon: '#', category: 'Việc làm', topic: 'CV, phỏng vấn và định hướng nghề nghiệp', position: 410, isLocked: false },
+    { id: 'events-community', name: 'sự-kiện', icon: '#', category: 'Cộng đồng', topic: 'Sự kiện, workshop và hoạt động sinh viên', position: 500, isLocked: false },
+    { id: 'random', name: 'chuyện-phiếm', icon: '#', category: 'Giải trí', topic: 'Nơi trò chuyện nhẹ nhàng ngoài giờ học', position: 900, isLocked: false },
   ];
 
   for (const room of rooms) {
     if (deletedRoomIds.has(room.id)) {
       continue;
     }
-    db.prepare(`
-      INSERT OR IGNORE INTO chat_rooms (id, type, name, icon, category, topic, position, is_locked, created_by)
-      VALUES (?, 'public', ?, ?, ?, ?, ?, ?, 'system')
-    `).run(room.id, room.name, room.icon, room.category, room.topic, room.position, room.isLocked);
+    await pool.query(`
+      INSERT INTO chat_rooms (id, type, name, icon, category, topic, position, is_locked, created_by)
+      VALUES ($1, 'public', $2, $3, $4, $5, $6, $7, 'system')
+      ON CONFLICT (id) DO NOTHING
+    `, [room.id, room.name, room.icon, room.category, room.topic, room.position, room.isLocked]);
   }
 }
 
-function ensurePrivateRoom(username, friendUsername) {
-  const user = findUserByUsername(username);
-  const friend = findUserByUsername(friendUsername);
+async function ensurePrivateRoom(username, friendUsername) {
+  const user = await findUserByUsername(username);
+  const friend = await findUserByUsername(friendUsername);
   if (!user || !friend || username === friendUsername) {
     return null;
   }
@@ -1040,195 +1120,208 @@ function ensurePrivateRoom(username, friendUsername) {
   const roomId = makePrivateRoomId(username, friendUsername);
   const displayName = [username, friendUsername].sort().join(', ');
 
-  const transaction = db.transaction(() => {
-    db.prepare(`
-      INSERT OR IGNORE INTO chat_rooms (id, type, name, icon, created_by)
-      VALUES (?, 'private', ?, '👥', ?)
-    `).run(roomId, displayName, username);
-    db.prepare('INSERT OR IGNORE INTO chat_room_members (room_id, username, role) VALUES (?, ?, ?)').run(roomId, username, 'member');
-    db.prepare('INSERT OR IGNORE INTO chat_room_members (room_id, username, role) VALUES (?, ?, ?)').run(roomId, friendUsername, 'member');
+  await withTransaction(async (client) => {
+    await client.query(`
+      INSERT INTO chat_rooms (id, type, name, icon, created_by)
+      VALUES ($1, 'private', $2, '👥', $3)
+      ON CONFLICT (id) DO NOTHING
+    `, [roomId, displayName, username]);
+    await client.query('INSERT INTO chat_room_members (room_id, username, role) VALUES ($1, $2, $3) ON CONFLICT (room_id, username) DO NOTHING', [roomId, username, 'member']);
+    await client.query('INSERT INTO chat_room_members (room_id, username, role) VALUES ($1, $2, $3) ON CONFLICT (room_id, username) DO NOTHING', [roomId, friendUsername, 'member']);
   });
 
-  transaction();
   return findRoomById(roomId, username);
 }
 
-function createPublicRoom({ name, icon = '#', category = 'Cộng đồng', topic = '', position = 500, isLocked = false, createdBy = 'admin' }) {
+async function createPublicRoom({ name, icon = '#', category = 'Cộng đồng', topic = '', position = 500, isLocked = false, createdBy = 'admin' }) {
   const cleanName = String(name || '').trim().slice(0, 80);
   if (!cleanName) {
     return null;
   }
 
-  const roomId = makeUniquePublicRoomId(cleanName);
+  const roomId = await makeUniquePublicRoomId(cleanName);
   const safePosition = Number.isFinite(Number(position)) ? Math.round(Number(position)) : 500;
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO chat_rooms (id, type, name, icon, category, topic, position, is_locked, created_by)
-    VALUES (?, 'public', ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    VALUES ($1, 'public', $2, $3, $4, $5, $6, $7, $8)
+  `, [
     roomId,
     cleanName,
     String(icon || '#').trim().slice(0, 12) || '#',
     String(category || 'Cộng đồng').trim().slice(0, 60) || 'Cộng đồng',
     String(topic || '').trim().slice(0, 240),
     safePosition,
-    isLocked ? 1 : 0,
-    createdBy || 'admin'
-  );
+    isLocked,
+    createdBy || 'admin',
+  ]);
 
-  unmarkRoomDeleted(roomId);
+  await unmarkRoomDeleted(roomId);
   return findRoomById(roomId);
 }
 
-function createGroupRoom({ name, members = [], createdBy, icon = '👨‍👩‍👧‍👦' }) {
-  const owner = findUserByUsername(createdBy);
+async function createGroupRoom({ name, members = [], createdBy, icon = '👨‍👩‍👧‍👦' }) {
+  const owner = await findUserByUsername(createdBy);
   if (!owner || !name || !String(name).trim()) {
     return null;
   }
 
-  const friendNames = new Set(listFriends(createdBy).map((friend) => friend.username));
+  const friendNames = new Set((await listFriends(createdBy)).map((friend) => friend.username));
   const canInviteAnyUser = owner.role === 'admin';
-  const cleanMembers = Array.from(new Set([createdBy, ...members]
+
+  const memberChecks = [createdBy, ...members]
     .map((member) => String(member || '').trim())
     .filter(Boolean)
-    .filter((member) => member === createdBy || (findUserByUsername(member) && (canInviteAnyUser || friendNames.has(member))))));
+    .filter((member) => member === createdBy || !friendNames || true);
+
+  const cleanMembers = [];
+  for (const member of [...new Set(memberChecks)]) {
+    if (member === createdBy) {
+      cleanMembers.push(member);
+      continue;
+    }
+    const user = await findUserByUsername(member);
+    if (user && (canInviteAnyUser || friendNames.has(member))) {
+      cleanMembers.push(member);
+    }
+  }
 
   const roomId = `group:${Date.now()}:${crypto.randomBytes(3).toString('hex')}`;
 
-  const transaction = db.transaction(() => {
-    db.prepare(`
+  await withTransaction(async (client) => {
+    await client.query(`
       INSERT INTO chat_rooms (id, type, name, icon, created_by)
-      VALUES (?, 'group', ?, ?, ?)
-    `).run(roomId, String(name).trim().slice(0, 80), icon || '👨‍👩‍👧‍👦', createdBy);
+      VALUES ($1, 'group', $2, $3, $4)
+    `, [roomId, String(name).trim().slice(0, 80), icon || '👨‍👩‍👧‍👦', createdBy]);
 
     for (const member of cleanMembers) {
-      db.prepare('INSERT OR IGNORE INTO chat_room_members (room_id, username, role) VALUES (?, ?, ?)').run(
-        roomId,
-        member,
-        member === createdBy ? 'owner' : 'member'
+      await client.query(
+        'INSERT INTO chat_room_members (room_id, username, role) VALUES ($1, $2, $3) ON CONFLICT (room_id, username) DO NOTHING',
+        [roomId, member, member === createdBy ? 'owner' : 'member']
       );
     }
   });
 
-  transaction();
   return findRoomById(roomId, createdBy);
 }
 
-function getRoomMembership(roomId, username) {
+async function getRoomMembership(roomId, username) {
   if (!roomId || !username) return null;
-  return db.prepare('SELECT * FROM chat_room_members WHERE room_id = ? AND username = ?').get(roomId, username);
+  const { rows } = await pool.query('SELECT * FROM chat_room_members WHERE room_id = $1 AND username = $2', [roomId, username]);
+  return rows[0] || null;
 }
 
-function canManageRoom(room, username) {
-  const user = findUserByUsername(username);
+async function canManageRoom(room, username) {
+  const user = await findUserByUsername(username);
   if (!room || !user) return false;
   if (user.role === 'admin') return true;
   if (room.createdBy === username) return true;
-  return getRoomMembership(room.id, username)?.role === 'owner';
+  const membership = await getRoomMembership(room.id, username);
+  return membership?.role === 'owner';
 }
 
-function canAccessRoom(roomId, username) {
-  const room = findRoomById(roomId, username);
-  const user = findUserByUsername(username);
+async function canAccessRoom(roomId, username) {
+  const room = await findRoomById(roomId, username);
+  const user = await findUserByUsername(username);
   if (!room || !user) return false;
   if (user.role === 'admin') return true;
   if (room.type === 'public') return true;
-  return Boolean(getRoomMembership(roomId, username));
+  return Boolean(await getRoomMembership(roomId, username));
 }
 
-function canSendMessageToRoom(roomId, username) {
-  const room = findRoomById(roomId, username);
-  const user = findUserByUsername(username);
-  if (!room || !user || !canAccessRoom(roomId, username)) return false;
+async function canSendMessageToRoom(roomId, username) {
+  const room = await findRoomById(roomId, username);
+  const user = await findUserByUsername(username);
+  if (!room || !user || !await canAccessRoom(roomId, username)) return false;
   if (user.role === 'admin') return true;
   if (room.isLocked && room.createdBy !== username) return false;
   return true;
 }
 
-function canReactToMessage(messageId, username) {
-  const message = findMessageById(messageId);
-  return Boolean(message && canAccessRoom(message.room, username));
+async function canReactToMessage(messageId, username) {
+  const message = await findMessageById(messageId);
+  return Boolean(message && await canAccessRoom(message.room, username));
 }
 
-function addGroupRoomMembers({ roomId, username, members = [] }) {
-  const room = findRoomById(roomId, username);
+async function addGroupRoomMembers({ roomId, username, members = [] }) {
+  const room = await findRoomById(roomId, username);
   if (!room || room.type !== 'group') {
     return { room: null, notFound: true };
   }
-  if (!canManageRoom(room, username)) {
+  if (!await canManageRoom(room, username)) {
     return { room: null, forbidden: true };
   }
 
-  const actor = findUserByUsername(username);
-  const friendNames = new Set(listFriends(username).map((friend) => friend.username));
+  const actor = await findUserByUsername(username);
+  const friendNames = new Set((await listFriends(username)).map((friend) => friend.username));
   const canInviteAnyUser = actor?.role === 'admin';
   const currentMembers = new Set((room.members || []).map((member) => member.username));
-  const cleanMembers = Array.from(new Set(
-    (Array.isArray(members) ? members : [])
-      .map((member) => String(member || '').trim())
-      .filter(Boolean)
-      .filter((member) => !currentMembers.has(member))
-      .filter((member) => findUserByUsername(member))
-      .filter((member) => canInviteAnyUser || friendNames.has(member))
-  ));
 
-  const transaction = db.transaction(() => {
+  const cleanMembers = [];
+  for (const member of (Array.isArray(members) ? members : [])) {
+    const m = String(member || '').trim();
+    if (!m || currentMembers.has(m)) continue;
+    const user = await findUserByUsername(m);
+    if (user && (canInviteAnyUser || friendNames.has(m))) {
+      cleanMembers.push(m);
+    }
+  }
+
+  await withTransaction(async (client) => {
     for (const member of cleanMembers) {
-      db.prepare('INSERT OR IGNORE INTO chat_room_members (room_id, username, role) VALUES (?, ?, ?)').run(
-        roomId,
-        member,
-        'member'
+      await client.query(
+        'INSERT INTO chat_room_members (room_id, username, role) VALUES ($1, $2, $3) ON CONFLICT (room_id, username) DO NOTHING',
+        [roomId, member, 'member']
       );
     }
   });
-  transaction();
 
-  return { room: findRoomById(roomId, username), added: cleanMembers };
+  return { room: await findRoomById(roomId, username), added: cleanMembers };
 }
 
-function findRoomById(roomId, viewer) {
-  const row = db.prepare('SELECT * FROM chat_rooms WHERE id = ?').get(roomId);
-  return row ? mapRoom(row, viewer) : null;
+async function findRoomById(roomId, viewer) {
+  const { rows } = await pool.query('SELECT * FROM chat_rooms WHERE id = $1', [roomId]);
+  return rows[0] ? mapRoom(rows[0], viewer) : null;
 }
 
-function listRooms(viewer) {
-  ensureDefaultChatRooms();
+async function listRooms(viewer) {
+  await ensureDefaultChatRooms();
 
   if (!viewer) {
-    return db.prepare(`
+    const { rows } = await pool.query(`
       SELECT *
       FROM chat_rooms
       WHERE type = 'public'
       ORDER BY created_at ASC
-    `).all().map((row) => mapRoom(row, viewer));
+    `);
+    return Promise.all(rows.map((row) => mapRoom(row, viewer)));
   }
 
-  const rows = db.prepare(`
+  const { rows } = await pool.query(`
     SELECT DISTINCT cr.*
     FROM chat_rooms cr
     LEFT JOIN chat_room_members crm ON crm.room_id = cr.id
-    WHERE cr.type = 'public' OR crm.username = ?
+    WHERE cr.type = 'public' OR crm.username = $1
     ORDER BY cr.created_at ASC
-  `).all(viewer);
+  `, [viewer]);
 
-  return rows
-    .map((row) => mapRoom(row, viewer))
-    .sort((a, b) => {
-      if (a.type === 'public' && b.type === 'public') {
-        return (a.position || 0) - (b.position || 0) || a.name.localeCompare(b.name);
-      }
-      if (a.lastTime && b.lastTime) {
-        return new Date(b.lastTime) - new Date(a.lastTime);
-      }
-      if (a.lastTime) return -1;
-      if (b.lastTime) return 1;
-      return a.name.localeCompare(b.name);
-    });
+  const mapped = await Promise.all(rows.map((row) => mapRoom(row, viewer)));
+  return mapped.sort((a, b) => {
+    if (a.type === 'public' && b.type === 'public') {
+      return (a.position || 0) - (b.position || 0) || a.name.localeCompare(b.name);
+    }
+    if (a.lastTime && b.lastTime) {
+      return new Date(b.lastTime) - new Date(a.lastTime);
+    }
+    if (a.lastTime) return -1;
+    if (b.lastTime) return 1;
+    return a.name.localeCompare(b.name);
+  });
 }
 
-function listAdminRooms() {
-  ensureDefaultChatRooms();
-  return db.prepare(`
+async function listAdminRooms() {
+  await ensureDefaultChatRooms();
+  const { rows } = await pool.query(`
     SELECT
       cr.*,
       COUNT(DISTINCT crm.username) AS member_count,
@@ -1239,158 +1332,183 @@ function listAdminRooms() {
     LEFT JOIN messages m ON m.room = cr.id
     GROUP BY cr.id
     ORDER BY cr.created_at DESC
-  `).all().map((row) => ({
-    ...mapRoom(row),
-    memberCount: row.member_count || 0,
-    messageCount: row.message_count || 0,
+  `);
+
+  return Promise.all(rows.map(async (row) => ({
+    ...await mapRoom(row),
+    memberCount: parseInt(row.member_count, 10) || 0,
+    messageCount: parseInt(row.message_count, 10) || 0,
     lastMessageAt: row.last_message_at || '',
-  }));
+  })));
 }
 
-function deleteRoom(roomId) {
-  const room = findRoomById(roomId);
+async function deleteRoom(roomId) {
+  const room = await findRoomById(roomId);
   if (!room) {
     return { deletedCount: 0 };
   }
 
-  const transaction = db.transaction(() => {
-    db.prepare(`
+  const result = await withTransaction(async (client) => {
+    await client.query(`
       DELETE FROM message_reactions
-      WHERE message_id IN (SELECT id FROM messages WHERE room = ?)
-    `).run(roomId);
-    db.prepare('DELETE FROM messages WHERE room = ?').run(roomId);
-    db.prepare('DELETE FROM chat_room_members WHERE room_id = ?').run(roomId);
-    const result = db.prepare('DELETE FROM chat_rooms WHERE id = ?').run(roomId);
-    return { deletedCount: result.changes };
+      WHERE message_id IN (SELECT id FROM messages WHERE room = $1)
+    `, [roomId]);
+    await client.query('DELETE FROM messages WHERE room = $1', [roomId]);
+    await client.query('DELETE FROM chat_room_members WHERE room_id = $1', [roomId]);
+    const { rowCount } = await client.query('DELETE FROM chat_rooms WHERE id = $1', [roomId]);
+    return { deletedCount: rowCount };
   });
 
-  const result = transaction();
   if (result.deletedCount > 0) {
-    markRoomDeleted(roomId);
+    await markRoomDeleted(roomId);
   }
   return result;
 }
 
-function listEvents() {
-  return db.prepare('SELECT * FROM events ORDER BY created_at DESC, id DESC').all().map(mapEvent);
+async function listEvents() {
+  const { rows } = await pool.query('SELECT * FROM events ORDER BY created_at DESC, id DESC');
+  return rows.map(mapEvent);
 }
 
-function createEvent({ icon = '📅', title, date = '', time = '' }) {
-  const info = db.prepare(`
+async function createEvent({ icon = '📅', title, date = '', time = '' }) {
+  const { rows } = await pool.query(`
     INSERT INTO events (icon, title, date, time)
-    VALUES (?, ?, ?, ?)
-  `).run(icon || '📅', title, date, time);
-  const row = db.prepare('SELECT * FROM events WHERE id = ?').get(info.lastInsertRowid);
-  return mapEvent(row);
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+  `, [icon || '📅', title, date, time]);
+  return mapEvent(rows[0]);
 }
 
-function updateEvent(id, updates = {}) {
-  const current = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
+async function updateEvent(id, updates = {}) {
+  const { rows: currentRows } = await pool.query('SELECT * FROM events WHERE id = $1', [id]);
+  const current = currentRows[0];
   if (!current) return null;
 
-  db.prepare(`
+  const { rows } = await pool.query(`
     UPDATE events
-    SET icon = ?, title = ?, date = ?, time = ?
-    WHERE id = ?
-  `).run(
+    SET icon = $1, title = $2, date = $3, time = $4
+    WHERE id = $5
+    RETURNING *
+  `, [
     updates.icon ?? current.icon,
     updates.title ?? current.title,
     updates.date ?? current.date,
     updates.time ?? current.time,
-    id
-  );
-
-  const row = db.prepare('SELECT * FROM events WHERE id = ?').get(id);
-  return mapEvent(row);
+    id,
+  ]);
+  return mapEvent(rows[0]);
 }
 
-function deleteEvent(id) {
-  const result = db.prepare('DELETE FROM events WHERE id = ?').run(id);
-  return { deletedCount: result.changes };
+async function deleteEvent(id) {
+  const { rowCount } = await pool.query('DELETE FROM events WHERE id = $1', [id]);
+  return { deletedCount: rowCount };
 }
 
-function listAnnouncements() {
-  return db.prepare('SELECT * FROM announcements ORDER BY created_at DESC, id DESC').all().map(mapAnnouncement);
+async function listAnnouncements() {
+  const { rows } = await pool.query('SELECT * FROM announcements ORDER BY created_at DESC, id DESC');
+  return rows.map(mapAnnouncement);
 }
 
-function createAnnouncement({ title, body = '', date = '', createdBy = 'admin', isBroadcast = 1 }) {
-  const info = db.prepare(`
+async function createAnnouncement({ title, body = '', date = '', createdBy = 'admin', isBroadcast = true }) {
+  const { rows } = await pool.query(`
     INSERT INTO announcements (title, body, date, created_by, is_broadcast)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(title, body, date, createdBy, isBroadcast ? 1 : 0);
-  const row = db.prepare('SELECT * FROM announcements WHERE id = ?').get(info.lastInsertRowid);
-  return mapAnnouncement(row);
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING *
+  `, [title, body, date, createdBy, isBroadcast]);
+  return mapAnnouncement(rows[0]);
 }
 
-function deleteAnnouncement(id) {
-  const result = db.prepare('DELETE FROM announcements WHERE id = ?').run(id);
-  return { deletedCount: result.changes };
+async function deleteAnnouncement(id) {
+  const { rowCount } = await pool.query('DELETE FROM announcements WHERE id = $1', [id]);
+  return { deletedCount: rowCount };
 }
 
-function getAdminOverview() {
-  const scalar = (sql, ...params) => db.prepare(sql).get(...params).count || 0;
-  const totals = {
-    users: scalar('SELECT COUNT(*) AS count FROM users'),
-    admins: scalar('SELECT COUNT(*) AS count FROM admins'),
-    posts: scalar('SELECT COUNT(*) AS count FROM posts'),
-    postLikes: scalar('SELECT COUNT(*) AS count FROM post_likes'),
-    postComments: scalar('SELECT COUNT(*) AS count FROM post_comments'),
-    jobs: scalar('SELECT COUNT(*) AS count FROM jobs'),
-    bookmarks: scalar('SELECT COUNT(*) AS count FROM bookmarks'),
-    messages: scalar('SELECT COUNT(*) AS count FROM messages'),
-    rooms: scalar('SELECT COUNT(*) AS count FROM chat_rooms'),
-    friendships: scalar("SELECT COUNT(*) AS count FROM friendships WHERE status = 'accepted'"),
-    pendingFriendships: scalar("SELECT COUNT(*) AS count FROM friendships WHERE status = 'pending'"),
-    events: scalar('SELECT COUNT(*) AS count FROM events'),
-    announcements: scalar('SELECT COUNT(*) AS count FROM announcements'),
-    feedback: scalar('SELECT COUNT(*) AS count FROM feedback'),
-    openFeedback: scalar("SELECT COUNT(*) AS count FROM feedback WHERE status IN ('new', 'reviewing')"),
+async function getAdminOverview() {
+  const scalar = async (sql) => {
+    const { rows } = await pool.query(sql);
+    return parseInt(rows[0]?.count, 10) || 0;
   };
 
-  const topRooms = db.prepare(`
-    SELECT
-      cr.id,
-      cr.name,
-      cr.type,
-      COUNT(m.id) AS message_count,
-      MAX(m.created_at) AS last_message_at
-    FROM chat_rooms cr
-    LEFT JOIN messages m ON m.room = cr.id
-    GROUP BY cr.id
-    ORDER BY message_count DESC, cr.created_at DESC
-    LIMIT 5
-  `).all().map((row) => ({
+  const [
+    users, admins, posts, postLikes, postComments, jobs, bookmarks,
+    messages, rooms, friendships, pendingFriendships, events, announcements,
+    feedback, openFeedback,
+  ] = await Promise.all([
+    scalar('SELECT COUNT(*) AS count FROM users'),
+    scalar('SELECT COUNT(*) AS count FROM admins'),
+    scalar('SELECT COUNT(*) AS count FROM posts'),
+    scalar('SELECT COUNT(*) AS count FROM post_likes'),
+    scalar('SELECT COUNT(*) AS count FROM post_comments'),
+    scalar('SELECT COUNT(*) AS count FROM jobs'),
+    scalar('SELECT COUNT(*) AS count FROM bookmarks'),
+    scalar('SELECT COUNT(*) AS count FROM messages'),
+    scalar('SELECT COUNT(*) AS count FROM chat_rooms'),
+    scalar("SELECT COUNT(*) AS count FROM friendships WHERE status = 'accepted'"),
+    scalar("SELECT COUNT(*) AS count FROM friendships WHERE status = 'pending'"),
+    scalar('SELECT COUNT(*) AS count FROM events'),
+    scalar('SELECT COUNT(*) AS count FROM announcements'),
+    scalar('SELECT COUNT(*) AS count FROM feedback'),
+    scalar("SELECT COUNT(*) AS count FROM feedback WHERE status IN ('new', 'reviewing')"),
+  ]);
+
+  const totals = {
+    users, admins, posts, postLikes, postComments, jobs, bookmarks,
+    messages, rooms, friendships, pendingFriendships, events, announcements,
+    feedback, openFeedback,
+  };
+
+  const [topRoomsResult, recentActivities, recentUsers] = await Promise.all([
+    pool.query(`
+      SELECT
+        cr.id,
+        cr.name,
+        cr.type,
+        COUNT(m.id) AS message_count,
+        MAX(m.created_at) AS last_message_at
+      FROM chat_rooms cr
+      LEFT JOIN messages m ON m.room = cr.id
+      GROUP BY cr.id
+      ORDER BY message_count DESC, cr.created_at DESC
+      LIMIT 5
+    `),
+    listActivities(10),
+    listAdminUsers(),
+  ]);
+
+  const topRooms = topRoomsResult.rows.map((row) => ({
     id: row.id,
     name: row.name,
     type: row.type,
-    messageCount: row.message_count || 0,
+    messageCount: parseInt(row.message_count, 10) || 0,
     lastMessageAt: row.last_message_at || '',
   }));
 
   return {
     totals,
-    recentActivities: listActivities(10),
-    recentUsers: listAdminUsers().slice(0, 6),
+    recentActivities,
+    recentUsers: recentUsers.slice(0, 6),
     topRooms,
     generatedAt: new Date().toISOString(),
     storage: {
-      database: 'SQLite',
+      database: 'PostgreSQL',
       status: 'online',
     },
   };
 }
 
-function getStatistics() {
-  const members = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-  const messages = db.prepare('SELECT COUNT(*) as count FROM messages').get().count;
-  const posts = db.prepare('SELECT COUNT(*) as count FROM posts').get().count;
-  const jobs = db.prepare('SELECT COUNT(*) as count FROM jobs').get().count;
+async function getStatistics() {
+  const [membersResult, messagesResult, postsResult, jobsResult] = await Promise.all([
+    pool.query('SELECT COUNT(*) as count FROM users'),
+    pool.query('SELECT COUNT(*) as count FROM messages'),
+    pool.query('SELECT COUNT(*) as count FROM posts'),
+    pool.query('SELECT COUNT(*) as count FROM jobs'),
+  ]);
 
   return {
-    members,
-    messages,
-    posts,
-    jobs,
+    members: parseInt(membersResult.rows[0].count, 10) || 0,
+    messages: parseInt(messagesResult.rows[0].count, 10) || 0,
+    posts: parseInt(postsResult.rows[0].count, 10) || 0,
+    jobs: parseInt(jobsResult.rows[0].count, 10) || 0,
   };
 }
 
@@ -1403,22 +1521,22 @@ const defaultTheme = {
   customCss: '',
 };
 
-function getAppTheme() {
-  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'theme'").get();
-  if (!row) {
+async function getAppTheme() {
+  const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'theme'");
+  if (!rows[0]) {
     return defaultTheme;
   }
 
   try {
-    const parsed = JSON.parse(row.value || '{}');
+    const parsed = JSON.parse(rows[0].value || '{}');
     return { ...defaultTheme, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
   } catch {
     return defaultTheme;
   }
 }
 
-function updateAppTheme(updates = {}) {
-  const current = getAppTheme();
+async function updateAppTheme(updates = {}) {
+  const current = await getAppTheme();
   const next = {
     ...current,
     brandName: String(updates.brandName ?? current.brandName).trim().slice(0, 80) || defaultTheme.brandName,
@@ -1429,17 +1547,17 @@ function updateAppTheme(updates = {}) {
     customCss: String(updates.customCss ?? current.customCss).slice(0, 8000),
   };
 
-  db.prepare(`
+  await pool.query(`
     INSERT INTO app_settings (key, value, updated_at)
-    VALUES ('theme', ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-  `).run(JSON.stringify(next));
+    VALUES ('theme', $1, NOW())
+    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `, [JSON.stringify(next)]);
 
   return getAppTheme();
 }
 
 module.exports = {
-  db,
+  pool,
   createUser,
   findUserByUsername,
   findUserByEmail,

@@ -7,6 +7,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('./config');
 const store = require('./db/store');
+const { runMigrations } = require('./db/index');
 
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
@@ -26,10 +27,10 @@ const io = socketio(server, {
 app.set('io', io);
 
 const initializeDefaultAdmin = async () => {
-  const existingAdmin = store.findAdminByUsername(config.defaultAdmin.username);
+  const existingAdmin = await store.findAdminByUsername(config.defaultAdmin.username);
   if (!existingAdmin) {
     const hashedPassword = await bcrypt.hash(config.defaultAdmin.password, 10);
-    store.createAdmin({
+    await store.createAdmin({
       username: config.defaultAdmin.username,
       email: config.defaultAdmin.email,
       password: hashedPassword,
@@ -38,14 +39,6 @@ const initializeDefaultAdmin = async () => {
     console.log(`✅ Default admin account created: ${config.defaultAdmin.username}`);
   }
 };
-
-initializeDefaultAdmin().catch((error) => {
-  console.error('❌ Failed to initialize default admin:', error.message);
-});
-
-store.promotePrimaryAdminUser();
-
-console.log('💾 Initializing SQLite database for development...');
 
 app.use(cors({ origin: config.corsOrigin }));
 app.use(express.json({ limit: '8mb' }));
@@ -59,13 +52,13 @@ app.use('/api/users', usersRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/admin', adminRoutes);
 
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
   try {
-    const stats = store.getStatistics();
+    const stats = await store.getStatistics();
     res.json({
       status: 'ok',
       service: 'studentnet',
-      database: 'sqlite',
+      database: 'postgresql',
       uptime: process.uptime(),
       generatedAt: new Date().toISOString(),
       stats,
@@ -86,7 +79,7 @@ const emitRoomUserCount = (room) => {
   io.to(room).emit('userCount', count);
 };
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token
     || String(socket.handshake.headers?.authorization || '').replace(/^Bearer\s+/i, '');
 
@@ -96,7 +89,7 @@ io.use((socket, next) => {
 
   try {
     const payload = jwt.verify(token, config.jwtSecret);
-    const currentUser = store.findUserByUsername(payload.username);
+    const currentUser = await store.findUserByUsername(payload.username);
     if (!currentUser) {
       return next(new Error('User not found'));
     }
@@ -116,11 +109,12 @@ io.use((socket, next) => {
 io.on('connection', socket => {
   console.log('✅ User connected:', socket.user?.username || socket.id);
 
-  socket.on('joinRoom', room => {
+  socket.on('joinRoom', async (room) => {
     if (!room) {
       return;
     }
-    if (!store.canAccessRoom(room, socket.user.username)) {
+    const canAccess = await store.canAccessRoom(room, socket.user.username);
+    if (!canAccess) {
       socket.emit('chatError', { room, error: 'You do not have access to this room' });
       return;
     }
@@ -137,10 +131,10 @@ io.on('connection', socket => {
     emitRoomUserCount(room);
   });
 
-  socket.on('typing', ({ room }) => {
-    if (!room || !store.canAccessRoom(room, socket.user.username)) {
-      return;
-    }
+  socket.on('typing', async ({ room }) => {
+    if (!room) return;
+    const canAccess = await store.canAccessRoom(room, socket.user.username);
+    if (!canAccess) return;
     socket.to(room).emit('typing', { room, username: socket.user.username });
   });
 
@@ -151,18 +145,19 @@ io.on('connection', socket => {
     socket.to(room).emit('stopTyping', { room, username: socket.user.username });
   });
 
-  socket.on('sendMessage', ({ room, message }) => {
+  socket.on('sendMessage', async ({ room, message }) => {
     try {
       const text = String(message || '').trim();
       if (!room || !text) {
         return;
       }
-      if (!store.canSendMessageToRoom(room, socket.user.username)) {
+      const canSend = await store.canSendMessageToRoom(room, socket.user.username);
+      if (!canSend) {
         socket.emit('chatError', { room, error: 'You cannot send messages to this room' });
         return;
       }
 
-      const savedMessage = store.createMessage({ room, username: socket.user.username, message: text });
+      const savedMessage = await store.createMessage({ room, username: socket.user.username, message: text });
       io.to(room).emit('newMessage', savedMessage);
       io.to(room).emit('stopTyping', { room, username: socket.user.username });
     } catch (error) {
@@ -170,17 +165,18 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('toggleReaction', ({ messageId, reaction }) => {
+  socket.on('toggleReaction', async ({ messageId, reaction }) => {
     try {
       if (!messageId || !reaction) {
         return;
       }
-      if (!store.canReactToMessage(parseInt(messageId, 10), socket.user.username)) {
+      const canReact = await store.canReactToMessage(parseInt(messageId, 10), socket.user.username);
+      if (!canReact) {
         socket.emit('chatError', { error: 'You cannot react to this message' });
         return;
       }
 
-      const updatedMessage = store.toggleMessageReaction(parseInt(messageId, 10), {
+      const updatedMessage = await store.toggleMessageReaction(parseInt(messageId, 10), {
         username: socket.user.username,
         reaction,
       });
@@ -214,8 +210,20 @@ app.get('*', (req, res) => {
   }
 });
 
-server.listen(config.port, () => {
-  console.log(`🚀 Cộng đồng sinh viên NTTU API running on http://localhost:${config.port}`);
-  console.log('📊 Build frontend with npm run build to serve it from the backend.');
-  console.log('💾 Using SQLite database for development');
+async function main() {
+  console.log('💾 Initializing PostgreSQL database...');
+  await runMigrations();
+  await initializeDefaultAdmin();
+  await store.promotePrimaryAdminUser();
+
+  server.listen(config.port, () => {
+    console.log(`🚀 Cộng đồng sinh viên NTTU API running on http://localhost:${config.port}`);
+    console.log('📊 Build frontend with npm run build to serve it from the backend.');
+    console.log('🐘 Using PostgreSQL database');
+  });
+}
+
+main().catch((error) => {
+  console.error('❌ Failed to start server:', error.message);
+  process.exit(1);
 });

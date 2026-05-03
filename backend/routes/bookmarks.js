@@ -5,9 +5,11 @@ const router = express.Router();
 
 router.get('/user/:username', requireUser, requireSameUser((req) => req.params.username), async (req, res) => {
     try {
-        const bookmarks = store.listBookmarksByUser(req.params.username);
-        const posts = store.listPosts();
-        const jobs = store.listJobs();
+        const [bookmarks, posts, jobs] = await Promise.all([
+            store.listBookmarksByUser(req.params.username),
+            store.listPosts(),
+            store.listJobs(),
+        ]);
 
         const bookmarkedItems = bookmarks.map((bookmark) => {
             if (bookmark.type === 'post') {
@@ -35,12 +37,12 @@ router.post('/', requireUser, requireSameUser((req) => req.body.userId), async (
             return res.status(400).json({ error: 'userId, postId, type required' });
         }
 
-        const existing = store.findBookmark({ userId, postId, type });
+        const existing = await store.findBookmark({ userId, postId, type });
         if (existing) {
             return res.status(400).json({ error: 'Already bookmarked' });
         }
 
-        const bookmark = store.createBookmark({ userId, postId, type });
+        const bookmark = await store.createBookmark({ userId, postId, type });
         res.json(bookmark);
     } catch (e) {
         console.error('❌ Error creating bookmark:', e.message);
@@ -55,7 +57,7 @@ router.delete('/', requireUser, requireSameUser((req) => req.query.userId), asyn
             return res.status(400).json({ error: 'userId and postId required' });
         }
 
-        const result = store.deleteBookmark({ userId, postId: Number(postId), type });
+        const result = await store.deleteBookmark({ userId, postId: Number(postId), type });
         res.json(result);
     } catch (e) {
         console.error('❌ Error deleting bookmark:', e.message);

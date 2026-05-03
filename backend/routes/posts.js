@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get('/', async (req, res) => {
     try {
-        res.json(store.listPosts());
+        res.json(await store.listPosts());
     } catch (e) {
         console.error('❌ Error fetching posts:', e.message);
         res.status(500).json({ error: e.message });
@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
     try {
-        const post = store.findPostById(parseInt(req.params.id, 10));
+        const post = await store.findPostById(parseInt(req.params.id, 10));
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
@@ -31,10 +31,10 @@ router.post('/', requireUser, requireSameUser((req) => req.body.author), async (
         if (!author || !title || !content) {
             return res.status(400).json({ error: 'Author, title, and content required' });
         }
-        const post = store.createPost({ author, title, content });
-        store.addUserReputation(author, 25);
+        const post = await store.createPost({ author, title, content });
+        await store.addUserReputation(author, 25);
 
-        store.createActivity({
+        await store.createActivity({
             username: author,
             action: 'đã đăng',
             target: title,
@@ -56,12 +56,12 @@ router.put('/:id/like', requireUser, requireSameUser((req) => req.body.username)
         }
 
         const postId = parseInt(req.params.id, 10);
-        const post = store.findPostById(postId);
+        const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
 
-        const updatedPost = store.togglePostLike(postId, username);
+        const updatedPost = await store.togglePostLike(postId, username);
         res.json(updatedPost);
     } catch (e) {
         console.error('❌ Error liking post:', e.message);
@@ -77,13 +77,13 @@ router.post('/:id/comment', requireUser, requireSameUser((req) => req.body.user)
         }
 
         const postId = parseInt(req.params.id, 10);
-        const post = store.findPostById(postId);
+        const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
 
-        const comment = store.addPostComment(postId, { user, text: String(text).trim() });
-        store.addUserReputation(user, 8);
+        const comment = await store.addPostComment(postId, { user, text: String(text).trim() });
+        await store.addUserReputation(user, 8);
         res.json(comment);
     } catch (e) {
         console.error('❌ Error commenting:', e.message);
@@ -94,14 +94,14 @@ router.post('/:id/comment', requireUser, requireSameUser((req) => req.body.user)
 router.delete('/:id', requireUser, async (req, res) => {
     try {
         const postId = parseInt(req.params.id, 10);
-        const post = store.findPostById(postId);
+        const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
         if (post.author !== req.user.username) {
             return res.status(403).json({ error: 'Only the post author can delete this post' });
         }
-        store.deletePost(postId);
+        await store.deletePost(postId);
         res.json({ message: 'Post deleted successfully' });
     } catch (e) {
         console.error('❌ Error deleting post:', e.message);

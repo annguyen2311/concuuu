@@ -10,7 +10,7 @@ const buildApplicationMessage = (username, job) => {
 
 router.get('/', async (req, res) => {
     try {
-        res.json(store.listJobs());
+        res.json(await store.listJobs());
     } catch (e) {
         console.error('❌ Error fetching jobs:', e.message);
         res.status(500).json({ error: e.message });
@@ -19,7 +19,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
     try {
-        const job = store.findJobById(parseInt(req.params.id, 10));
+        const job = await store.findJobById(parseInt(req.params.id, 10));
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
@@ -36,7 +36,7 @@ router.post('/', requireUser, requireSameUser((req) => req.body.postedBy), async
         if (!title || !company || !postedBy) {
             return res.status(400).json({ error: 'Title, company, and postedBy required' });
         }
-        const job = store.createJob({
+        const job = await store.createJob({
             title,
             company,
             salary: salary || 'Thỏa thuận',
@@ -47,9 +47,9 @@ router.post('/', requireUser, requireSameUser((req) => req.body.postedBy), async
             description: description || '',
             postedBy
         });
-        store.addUserReputation(postedBy, 20);
+        await store.addUserReputation(postedBy, 20);
 
-        store.createActivity({
+        await store.createActivity({
             username: postedBy,
             action: 'đã đăng tuyển',
             target: title,
@@ -70,25 +70,25 @@ router.post('/:id/apply', requireUser, requireSameUser((req) => req.body.usernam
             return res.status(400).json({ error: 'Username required' });
         }
 
-        const job = store.findJobById(parseInt(req.params.id, 10));
+        const job = await store.findJobById(parseInt(req.params.id, 10));
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
 
-        store.createActivity({
+        await store.createActivity({
             username,
             action: 'đã ứng tuyển',
             target: job.title,
             icon: '📋'
         });
-        store.addUserReputation(username, 10);
+        await store.addUserReputation(username, 10);
 
         let room = null;
         let message = null;
         if (job.postedBy && job.postedBy !== username) {
-            room = store.ensurePrivateRoom(username, job.postedBy);
+            room = await store.ensurePrivateRoom(username, job.postedBy);
             if (room) {
-                message = store.createMessage({
+                message = await store.createMessage({
                     room: room.id,
                     username,
                     message: buildApplicationMessage(username, job),

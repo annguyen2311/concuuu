@@ -15,11 +15,12 @@ router.put('/messages/:id/reaction', requireUser, requireSameUser((req) => req.b
             return res.status(400).json({ error: 'Username and reaction required' });
         }
 
-        if (!store.canReactToMessage(messageId, username)) {
+        const canReact = await store.canReactToMessage(messageId, username);
+        if (!canReact) {
             return res.status(403).json({ error: 'You do not have access to this message' });
         }
 
-        const updatedMessage = store.toggleMessageReaction(messageId, { username, reaction });
+        const updatedMessage = await store.toggleMessageReaction(messageId, { username, reaction });
         if (!updatedMessage) {
             return res.status(404).json({ error: 'Message not found' });
         }
@@ -38,7 +39,7 @@ router.post('/rooms/private', requireUser, requireSameUser((req) => req.body.use
             return res.status(400).json({ error: 'username and friendUsername required' });
         }
 
-        const room = store.ensurePrivateRoom(username, friendUsername);
+        const room = await store.ensurePrivateRoom(username, friendUsername);
         if (!room) {
             return res.status(404).json({ error: 'Unable to create private room' });
         }
@@ -57,7 +58,7 @@ router.post('/rooms/groups', requireUser, requireSameUser((req) => req.body.crea
             return res.status(400).json({ error: 'name and createdBy required' });
         }
 
-        const room = store.createGroupRoom({ name, members, createdBy, icon });
+        const room = await store.createGroupRoom({ name, members, createdBy, icon });
         if (!room) {
             return res.status(400).json({ error: 'Unable to create group room' });
         }
@@ -76,7 +77,7 @@ router.put('/rooms/:roomId/members', requireUser, requireSameUser((req) => req.b
             return res.status(400).json({ error: 'username required' });
         }
 
-        const result = store.addGroupRoomMembers({
+        const result = await store.addGroupRoomMembers({
             roomId: req.params.roomId,
             username,
             members,
@@ -98,7 +99,7 @@ router.put('/rooms/:roomId/members', requireUser, requireSameUser((req) => req.b
 
 router.get('/rooms/list/all', requireUser, async (req, res) => {
     try {
-        res.json(store.listRooms(req.user.username));
+        res.json(await store.listRooms(req.user.username));
     } catch (e) {
         console.error('❌ Error fetching rooms:', e.message);
         res.status(500).json({ error: e.message });
@@ -107,7 +108,8 @@ router.get('/rooms/list/all', requireUser, async (req, res) => {
 
 router.get('/:room', requireUser, async (req, res) => {
     try {
-        if (!store.canAccessRoom(req.params.room, req.user.username)) {
+        const canAccess = await store.canAccessRoom(req.params.room, req.user.username);
+        if (!canAccess) {
             return res.status(403).json({ error: 'You do not have access to this room' });
         }
 
@@ -115,7 +117,7 @@ router.get('/:room', requireUser, async (req, res) => {
         const beforeId = Number.parseInt(req.query.beforeId, 10);
         const beforeCreatedAt = req.query.beforeCreatedAt;
 
-        const messages = store.listMessagesByRoom(req.params.room, {
+        const messages = await store.listMessagesByRoom(req.params.room, {
             limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 100) : 50,
             before: Number.isFinite(beforeId) && beforeCreatedAt ? { id: beforeId, createdAt: beforeCreatedAt } : undefined,
         });
@@ -132,11 +134,12 @@ router.post('/:room', requireUser, requireSameUser((req) => req.body.username), 
         if (!username || !message) {
             return res.status(400).json({ error: 'Username and message required' });
         }
-        if (!store.canSendMessageToRoom(req.params.room, username)) {
+        const canSend = await store.canSendMessageToRoom(req.params.room, username);
+        if (!canSend) {
             return res.status(403).json({ error: 'You cannot send messages to this room' });
         }
 
-        const msg = store.createMessage({ room: req.params.room, username, message });
+        const msg = await store.createMessage({ room: req.params.room, username, message });
         res.json(msg);
     } catch (e) {
         console.error('❌ Error creating message:', e.message);

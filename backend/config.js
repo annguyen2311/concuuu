@@ -17,6 +17,7 @@ const resolveDatabasePath = () => {
 module.exports = {
   port: toPort(process.env.PORT, 3001),
   databasePath: resolveDatabasePath(),
+  databaseUrl: process.env.DATABASE_URL || null,
   corsOrigin: process.env.CORS_ORIGIN || '*',
   jwtSecret: process.env.JWT_SECRET || 'studentnet_dev_jwt_secret',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

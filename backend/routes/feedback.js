@@ -8,7 +8,7 @@ router.use(requireUser);
 
 router.get('/mine', async (req, res) => {
   try {
-    res.json(store.listFeedback({ username: req.user.username }));
+    res.json(await store.listFeedback({ username: req.user.username }));
   } catch (e) {
     console.error('❌ Error fetching feedback:', e.message);
     res.status(500).json({ error: e.message });
@@ -18,7 +18,7 @@ router.get('/mine', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { type, title, message, rating } = req.body || {};
-    const feedback = store.createFeedback({
+    const feedback = await store.createFeedback({
       username: req.user.username,
       type,
       title,
@@ -30,9 +30,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Title and message required' });
     }
 
-    store.addUserReputation(req.user.username, 10);
+    await store.addUserReputation(req.user.username, 10);
 
-    store.createActivity({
+    await store.createActivity({
       username: req.user.username,
       action: 'đã gửi feedback',
       target: feedback.title,
