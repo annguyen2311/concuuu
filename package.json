@@ -1,0 +1,29 @@
+{
+  "name": "studentnet",
+  "version": "1.0.0",
+  "description": "StudentNet - Student Community Platform",
+  "main": "server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && node server.js",
+    "client": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "postinstall": "cd backend && npm install && cd ../frontend && npm install",
+    "deploy:check": "npm run build && cd backend && node --check server.js && node --check routes/admin.js && node --check routes/feedback.js && node --check db/store.js",
+    "start": "cd backend && npm start",
+    "test:api": "cd backend && node test-api.js"
+  },
+  "keywords": [
+    "student",
+    "community",
+    "chat"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.9.0"
+  }
+}
