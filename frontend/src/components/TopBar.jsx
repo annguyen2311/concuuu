@@ -40,11 +40,16 @@ const labels = {
   },
 };
 
-function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogout, notificationCount = 0 }) {
+const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogout, notificationCount = 0 }, ref) {
   const [searchQuery, setSearchQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [extraActions, setExtraActions] = useState([]);
   const menuRef = useRef(null);
   const navigate = useNavigate();
+
+  React.useImperativeHandle(ref, () => ({
+    setExtraActions,
+  }), []);
   const copy = useMemo(() => labels[language] || labels.vi, [language]);
   const placeholder = placeholders[language] || placeholders.vi;
   const roleLabel = user?.role === 'admin' ? copy.adminRole : copy.role;
@@ -88,7 +93,18 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {extraActions.map((action) => (
+            <button
+              key={action.key}
+              type="button"
+              onClick={action.onClick}
+              className={action.className || 'flex items-center gap-2 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:opacity-90'}
+            >
+              {action.icon && <span>{action.icon}</span>}
+              <span>{action.label}</span>
+            </button>
+          ))}
           <button
             type="button"
             onClick={onOpenNotifications}
@@ -182,6 +198,6 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
       </div>
     </header>
   );
-}
+});
 
 export default TopBar;

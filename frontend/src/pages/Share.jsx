@@ -69,7 +69,7 @@ const formatDate = (value, language) => {
   });
 };
 
-function Share({ language = 'vi' }) {
+function Share({ language = 'vi', topBarRef }) {
   const copy = copyByLanguage[language] || copyByLanguage.vi;
   const [posts, setPosts] = useState([]);
   const [content, setContent] = useState('');
@@ -103,6 +103,23 @@ function Share({ language = 'vi' }) {
   useEffect(() => {
     loadPosts();
   }, []);
+
+  useEffect(() => {
+    if (!topBarRef?.current) return;
+    topBarRef.current.setExtraActions([
+      {
+        key: 'new-post',
+        label: copy.newPost,
+        icon: '✏️',
+        onClick: () => setShowForm(true),
+      },
+    ]);
+    return () => {
+      if (topBarRef?.current) {
+        topBarRef.current.setExtraActions([]);
+      }
+    };
+  }, [topBarRef, copy.newPost]);
 
   const visiblePosts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -209,16 +226,6 @@ function Share({ language = 'vi' }) {
           {notice}
         </div>
       )}
-
-      {/* Mobile FAB for new post */}
-      <button
-        type="button"
-        onClick={() => setShowForm(true)}
-        className="fixed bottom-20 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] text-2xl text-white shadow-lg shadow-[var(--accent)]/30 transition hover:scale-105 xl:hidden"
-        aria-label={copy.newPost}
-      >
-        ✏️
-      </button>
 
       {/* Mobile form overlay */}
       {showForm && (

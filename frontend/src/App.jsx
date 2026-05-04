@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import AuthForm from "./components/AuthForm";
@@ -159,6 +159,7 @@ function App() {
   const [latestAnnouncement, setLatestAnnouncement] = useState(null);
   const [showLoginAnnouncement, setShowLoginAnnouncement] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const topBarRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const language = settings.language || 'vi';
@@ -407,6 +408,7 @@ function App() {
       <Sidebar user={user} brandName={brandName} language={language} onLogout={handleLogout} mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
       <div className="app-content flex-1">
         <TopBar
+          ref={topBarRef}
           user={user}
           language={language}
           onOpenNotifications={() => setShowLoginAnnouncement(Boolean(latestAnnouncement))}
@@ -416,7 +418,7 @@ function App() {
         />
         <Routes>
           <Route path="/" element={<DashboardOverview user={user} copy={copy} brandName={brandName} language={language} />} />
-          <Route path="/share" element={<Share language={language} />} />
+          <Route path="/share" element={<Share language={language} topBarRef={topBarRef} />} />
           <Route path="/jobs" element={<Jobs language={language} />} />
           <Route path="/chat" element={<ChatRoomPage language={language} />} />
           <Route path="/friends" element={<Friends language={language} />} />
