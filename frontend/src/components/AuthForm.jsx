@@ -49,8 +49,8 @@ function AuthForm({ setUser, brandName = 'Cộng đồng sinh viên NTTU', initi
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4" style={{ background: 'var(--page-gradient), var(--page-bg)' }}>
-      <section className="grid w-full max-w-5xl overflow-hidden rounded-[1.25rem] border border-white/40 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] md:grid-cols-[1fr_26rem]">
-        <div className="flex min-h-[34rem] flex-col justify-between bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] p-8 text-white">
+      <section className="auth-section grid w-full max-w-5xl overflow-hidden rounded-[1.25rem] border border-white/40 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] md:grid-cols-[1fr_26rem]">
+        <div className="auth-panel flex min-h-[34rem] flex-col justify-between bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] p-8 text-white">
           <div>
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-2xl font-black ring-1 ring-white/25">
               N
@@ -67,7 +67,7 @@ function AuthForm({ setUser, brandName = 'Cộng đồng sinh viên NTTU', initi
           </div>
         </div>
 
-        <div className="p-8">
+        <div className="auth-form-side p-8">
           <div className="mb-8">
             <p className="text-sm font-black uppercase tracking-[0.14em] text-[var(--accent)]">
               {isRegister ? 'Tạo tài khoản' : 'Đăng nhập'}

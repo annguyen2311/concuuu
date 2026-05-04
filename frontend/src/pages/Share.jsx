@@ -80,6 +80,7 @@ function Share({ language = 'vi' }) {
   const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [view, setView] = useState('recent');
+  const [showForm, setShowForm] = useState(false);
   const currentUser = localStorage.getItem('username');
 
   const showNotice = (text) => {
@@ -209,8 +210,42 @@ function Share({ language = 'vi' }) {
         </div>
       )}
 
+      {/* Mobile FAB for new post */}
+      <button
+        type="button"
+        onClick={() => setShowForm(true)}
+        className="fixed bottom-20 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] text-2xl text-white shadow-lg shadow-[var(--accent)]/30 transition hover:scale-105 xl:hidden"
+        aria-label={copy.newPost}
+      >
+        ✏️
+      </button>
+
+      {/* Mobile form overlay */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm xl:hidden" onClick={() => setShowForm(false)}>
+          <div className="w-full max-w-lg rounded-t-[1.5rem] bg-[var(--surface-elevated)] p-5 pb-8 shadow-[var(--shadow-strong)]" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-black text-[var(--text-primary)]">{copy.newPost}</h2>
+              <button type="button" onClick={() => setShowForm(false)} className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-[var(--text-muted)]">✕</button>
+            </div>
+            <form onSubmit={(e) => { submit(e).then(() => setShowForm(false)); }} className="grid gap-3">
+              <input value={title} onChange={(event) => setTitle(event.target.value)} className="input-field" placeholder={copy.titleInput} />
+              <textarea value={content} onChange={(event) => setContent(event.target.value)} className="input-field min-h-32 resize-none" placeholder={copy.bodyInput} />
+              <div className="flex gap-2">
+                <button type="button" className="btn-secondary flex-1" onClick={() => { setContent(''); setTitle(''); }} disabled={loading}>
+                  {copy.clear}
+                </button>
+                <button type="submit" className="btn-success flex-1" disabled={loading || !content.trim() || !title.trim()}>
+                  {loading ? copy.publishing : copy.publish}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[24rem_minmax(0,1fr)]">
-        <aside className="space-y-6">
+        <aside className="hidden space-y-6 xl:block">
           <section className="rounded-[1.25rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-soft)]">
             <h2 className="mb-4 text-lg font-black text-[var(--text-primary)]">{copy.newPost}</h2>
             <form onSubmit={submit} className="grid gap-3">

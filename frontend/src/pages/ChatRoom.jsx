@@ -172,6 +172,7 @@ function ChatRoom({ language = 'vi' }) {
   const [groupIcon, setGroupIcon] = useState('👨‍👩‍👧‍👦');
   const [groupMembers, setGroupMembers] = useState([]);
   const [membersToAdd, setMembersToAdd] = useState([]);
+  const [mobileView, setMobileView] = useState('rooms');
 
   const currentUser = localStorage.getItem('username') || 'Guest';
   const storedUser = useMemo(() => {
@@ -599,6 +600,7 @@ function ChatRoom({ language = 'vi' }) {
     const res = await axios.post('/api/chat/rooms/private', { username: currentUser, friendUsername });
     setRooms((prev) => mergeRoomList(prev, [res.data]));
     setSelectedRoom(res.data.id);
+    setMobileView('messages');
     setActiveUserMenu(null);
   };
 
@@ -653,6 +655,7 @@ function ChatRoom({ language = 'vi' }) {
 
     setRooms((prev) => mergeRoomList(prev, [res.data]));
     setSelectedRoom(res.data.id);
+    setMobileView('messages');
     setGroupName('');
     setGroupMembers([]);
     setShowGroupComposer(false);
@@ -692,8 +695,8 @@ function ChatRoom({ language = 'vi' }) {
 
   return (
     <div className="main-container max-w-7xl">
-      <div className="grid h-[calc(100vh-7rem)] min-h-[38rem] grid-cols-1 overflow-hidden rounded-[1.75rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] shadow-[var(--shadow-soft)] xl:grid-cols-[23rem_minmax(0,1fr)_18rem] lg:grid-cols-[22rem_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col border-b border-[var(--border-color)] bg-[var(--surface-soft)] lg:border-b-0 lg:border-r">
+      <div className={`grid h-[calc(100vh-7rem)] min-h-[38rem] grid-cols-1 overflow-hidden rounded-[1.75rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] shadow-[var(--shadow-soft)] xl:grid-cols-[23rem_minmax(0,1fr)_18rem] lg:grid-cols-[22rem_minmax(0,1fr)] ${mobileView === 'rooms' ? 'chat-mobile-rooms-visible' : 'chat-mobile-messages-visible'}`}>
+        <aside className="chat-aside-rooms flex min-h-0 flex-col border-b border-[var(--border-color)] bg-[var(--surface-soft)] lg:border-b-0 lg:border-r">
           <div className="border-b border-[var(--border-color)] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -803,7 +806,7 @@ function ChatRoom({ language = 'vi' }) {
                         <button
                           key={room.id}
                           type="button"
-                          onClick={() => setSelectedRoom(room.id)}
+                          onClick={() => { setSelectedRoom(room.id); setMobileView('messages'); }}
                           className={`group flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition ${
                             isActive ? 'bg-[var(--surface-elevated)] shadow-sm ring-1 ring-[var(--border-strong)]' : 'hover:bg-[var(--surface-elevated)]/75'
                           }`}
@@ -839,9 +842,17 @@ function ChatRoom({ language = 'vi' }) {
           </div>
         </aside>
 
-        <section className="flex min-h-0 flex-col">
+        <section className="chat-main-messages flex min-h-0 flex-col">
           <header className="flex items-center justify-between gap-4 border-b border-[var(--border-color)] px-5 py-4">
             <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileView('rooms')}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-[var(--text-secondary)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] lg:hidden"
+                aria-label="Back to rooms"
+              >
+                ←
+              </button>
               <RoomAvatar icon={selectedRoomData.icon} label={formatRoomName(selectedRoomData)} />
               <div className="min-w-0">
                 <h2 className="truncate text-lg font-black text-[var(--text-primary)]">{formatRoomName(selectedRoomData)}</h2>

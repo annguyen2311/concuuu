@@ -382,7 +382,7 @@ function Profile({ language = 'vi' }) {
 
       <section className="mb-6 overflow-hidden rounded-[1.5rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] shadow-[var(--shadow-soft)]">
         <div
-          className="relative h-48 bg-gradient-to-r from-sky-200 via-violet-200 to-teal-200"
+          className="profile-cover relative h-48 bg-gradient-to-r from-sky-200 via-violet-200 to-teal-200"
           style={profile.coverImage ? { backgroundImage: `url(${profile.coverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : {}}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-black/35 to-transparent" />
@@ -391,9 +391,9 @@ function Profile({ language = 'vi' }) {
         <div className="relative px-6 pb-6 md:px-8">
           <div className="-mt-16 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
             <div className="flex flex-col gap-4 md:flex-row md:items-end">
-              <AvatarPreview value={profile.avatar} username={profile.username} className="h-32 w-32 text-4xl" />
+              <AvatarPreview value={profile.avatar} username={profile.username} className="profile-avatar h-32 w-32 text-4xl" />
               <div className="pb-2">
-                <h1 className="text-4xl font-black text-[var(--text-primary)]">{profile.username}</h1>
+                <h1 className="profile-username text-4xl font-black text-[var(--text-primary)]">{profile.username}</h1>
                 <p className="mt-1 text-sm text-[var(--text-secondary)]">{copy.joined} {joinDateLabel}</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {profileTags.length > 0 ? profileTags.map((tag) => (
@@ -414,7 +414,7 @@ function Profile({ language = 'vi' }) {
             </button>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-3 text-center">
+          <div className="profile-metrics mt-6 grid grid-cols-3 gap-3 text-center">
             <ProfileMetric value={profile.postCount || 0} label={copy.posts} />
             <ProfileMetric value={friends.length} label={copy.friends} />
             <ProfileMetric value={profileLevel.level} label={copy.level} />

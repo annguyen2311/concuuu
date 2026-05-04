@@ -17,6 +17,7 @@ import Settings from "./pages/Settings";
 import AdminPanel from "./pages/AdminPanel";
 import Friends from "./pages/Friends";
 import Feedback from "./pages/Feedback";
+import MobileBottomNav from "./components/MobileBottomNav";
 import { getLevelInfo } from "./utils/level";
 
 const defaultSettings = {
@@ -405,14 +406,6 @@ function App() {
     <div className="app-shell min-h-screen flex">
       <Sidebar user={user} brandName={brandName} language={language} onLogout={handleLogout} mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
       <div className="app-content flex-1">
-        <button
-          type="button"
-          className="mobile-menu-btn"
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Open menu"
-        >
-          <span className="hamburger-icon">☰</span>
-        </button>
         <TopBar
           user={user}
           language={language}
@@ -445,6 +438,7 @@ function App() {
           <Route path="*" element={<DashboardOverview user={user} copy={copy} brandName={brandName} language={language} />} />
         </Routes>
       </div>
+      <MobileBottomNav language={language} />
       <LoginAnnouncementModal
         open={showLoginAnnouncement}
         announcement={latestAnnouncement}

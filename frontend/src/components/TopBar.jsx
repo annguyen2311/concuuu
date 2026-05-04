@@ -74,8 +74,8 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-[var(--surface-overlay)]/90 backdrop-blur-xl">
-      <div className="flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <div className="flex-1 max-w-2xl">
+      <div className="topbar-inner flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <div className="topbar-search flex-1 max-w-2xl">
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">🔍</span>
             <input
@@ -92,7 +92,7 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
           <button
             type="button"
             onClick={onOpenNotifications}
-            className="hidden min-w-[9rem] items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-elevated)] px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] md:flex"
+            className="topbar-notifications hidden min-w-[9rem] items-center justify-between gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-elevated)] px-4 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] md:flex"
             title={copy.notificationsHint}
           >
             <span className="flex items-center gap-3">
@@ -110,7 +110,7 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
           <button
             type="button"
             onClick={onOpenChat}
-            className="hidden items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-elevated)] px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] md:flex"
+            className="topbar-chat-btn hidden items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-elevated)] px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:bg-[var(--surface-muted)] md:flex"
             title={copy.chatHint}
           >
             <span className="text-lg" aria-hidden="true">💬</span>
@@ -128,11 +128,11 @@ function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogo
               title={copy.menuHint}
               aria-expanded={menuOpen}
             >
-              <div className="hidden text-right sm:block">
+              <div className="topbar-user-name hidden text-right sm:block">
                 <p className="text-sm font-semibold text-[var(--text-primary)]">{user?.username || 'User'}</p>
                 <p className={`text-xs ${user?.role === 'admin' ? 'font-bold text-amber-600' : 'text-[var(--text-muted)]'}`}>{roleLabel}</p>
               </div>
-              <UserAvatar value={user?.avatar} name={user?.username || 'User'} className="h-11 w-11 text-sm" />
+              <UserAvatar value={user?.avatar} name={user?.username || 'User'} className="topbar-avatar h-11 w-11 text-sm" />
               <span className={`hidden text-xs text-[var(--text-muted)] transition sm:inline ${menuOpen ? 'rotate-180' : ''}`}>⌄</span>
             </button>
 
