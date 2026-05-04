@@ -8,21 +8,24 @@ export default function AiAssistant({ language = 'vi' }) {
   const [loading, setLoading] = useState(false);
   const [configured, setConfigured] = useState(null);
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   const copy = language === 'en' ? {
     title: 'AI Assistant',
-    placeholder: 'Ask about the server...',
+    placeholder: 'Type a message...',
     send: 'Send',
     notConfigured: 'AI not configured. Set API key in Admin Panel.',
     thinking: 'Thinking...',
     error: 'Error connecting to AI',
+    greeting: 'Hi! I\'m your AI assistant. Ask me anything about the server.',
   } : {
     title: 'Trợ lý AI',
-    placeholder: 'Hỏi về server...',
+    placeholder: 'Nhập tin nhắn...',
     send: 'Gửi',
     notConfigured: 'AI chưa được cấu hình. Đặt API key trong Admin Panel.',
     thinking: 'Đang suy nghĩ...',
     error: 'Lỗi kết nối AI',
+    greeting: 'Xin chào! Tôi là trợ lý AI. Hãy hỏi tôi bất cứ điều gì về server.',
   };
 
   const authConfig = () => {
@@ -36,11 +39,14 @@ export default function AiAssistant({ language = 'vi' }) {
         setConfigured(res.data.apiKeySet);
       }).catch(() => setConfigured(false));
     }
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 200);
+    }
   }, [open, configured]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, loading]);
 
   const sendMessage = async () => {
     const text = input.trim();
@@ -74,85 +80,273 @@ export default function AiAssistant({ language = 'vi' }) {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Toggle tab on right edge */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="fixed bottom-20 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600 text-2xl text-white shadow-lg shadow-purple-500/30 transition hover:scale-105 md:bottom-6 md:right-6"
+        className="ai-toggle-tab"
         title={copy.title}
+        style={{
+          position: 'fixed',
+          right: open ? '320px' : '0',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 1001,
+          width: '32px',
+          height: '80px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'linear-gradient(135deg, #7c3aed, #2563eb)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '8px 0 0 8px',
+          cursor: 'pointer',
+          fontSize: '16px',
+          boxShadow: '-2px 0 12px rgba(124, 58, 237, 0.3)',
+          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          writingMode: open ? 'horizontal-tb' : 'vertical-rl',
+        }}
       >
         {open ? '✕' : '🤖'}
       </button>
 
-      {/* Chat panel */}
+      {/* Backdrop on mobile */}
       {open && (
-        <div className="fixed bottom-36 right-4 z-50 flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--surface-elevated)] shadow-[var(--shadow-strong)] md:bottom-22 md:right-6">
-          {/* Header */}
-          <div className="flex items-center gap-3 bg-gradient-to-r from-purple-600 to-blue-600 px-4 py-3 text-white">
-            <span className="text-lg">🤖</span>
-            <span className="font-bold">{copy.title}</span>
-            <button type="button" onClick={() => setMessages([])} className="ml-auto text-xs opacity-70 hover:opacity-100">Clear</button>
-          </div>
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.3)',
+            zIndex: 999,
+          }}
+          className="md:hidden"
+        />
+      )}
 
-          {/* Messages */}
-          <div className="flex h-80 flex-col gap-3 overflow-y-auto p-4">
-            {configured === false && (
-              <div className="rounded-xl bg-amber-50 p-3 text-center text-sm font-semibold text-amber-700">
-                {copy.notConfigured}
-              </div>
-            )}
-            {messages.length === 0 && configured && (
-              <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
-                <div className="text-center">
-                  <p className="text-3xl">🤖</p>
-                  <p className="mt-2">{copy.title}</p>
-                </div>
-              </div>
-            )}
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-6 ${
-                  msg.role === 'user'
-                    ? 'bg-[var(--accent)] text-white'
-                    : 'bg-[var(--surface-muted)] text-[var(--text-primary)]'
-                }`}>
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div className="flex justify-start">
-                <div className="rounded-2xl bg-[var(--surface-muted)] px-4 py-2.5 text-sm text-[var(--text-muted)]">
-                  {copy.thinking}
-                </div>
-              </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+      {/* Sidebar panel */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: open ? '0' : '-320px',
+          bottom: 0,
+          width: '320px',
+          maxWidth: '85vw',
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          background: 'var(--surface-elevated, #fff)',
+          borderLeft: '1px solid var(--border-color, #e2e8f0)',
+          boxShadow: open ? '-4px 0 24px rgba(0,0,0,0.12)' : 'none',
+        }}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '14px 16px',
+          background: 'linear-gradient(135deg, #7c3aed, #2563eb)',
+          color: '#fff',
+          flexShrink: 0,
+        }}>
+          <span style={{ fontSize: '20px' }}>🤖</span>
+          <span style={{ fontWeight: 700, fontSize: '15px', flex: 1 }}>{copy.title}</span>
+          <button
+            type="button"
+            onClick={() => setMessages([])}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: '#fff',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            }}
+          >
+            Clear
+          </button>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: '#fff',
+              width: '28px',
+              height: '28px',
+              borderRadius: '6px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+        </div>
 
-          {/* Input */}
-          <div className="border-t border-[var(--border-color)] p-3">
-            <div className="flex gap-2">
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={copy.placeholder}
-                disabled={!configured || loading}
-                className="input-field flex-1 rounded-xl py-2.5 text-sm"
-              />
-              <button
-                type="button"
-                onClick={sendMessage}
-                disabled={!configured || loading || !input.trim()}
-                className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-40"
-              >
-                {copy.send}
-              </button>
+        {/* Messages area */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+        }}>
+          {configured === false && (
+            <div style={{
+              background: '#fef3c7',
+              color: '#92400e',
+              padding: '12px',
+              borderRadius: '10px',
+              fontSize: '13px',
+              fontWeight: 600,
+              textAlign: 'center',
+            }}>
+              {copy.notConfigured}
             </div>
+          )}
+
+          {messages.length === 0 && configured !== false && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flex: 1,
+              gap: '12px',
+              opacity: 0.6,
+            }}>
+              <span style={{ fontSize: '40px' }}>🤖</span>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted, #94a3b8)', textAlign: 'center', lineHeight: 1.5 }}>
+                {copy.greeting}
+              </p>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} style={{
+              display: 'flex',
+              justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+            }}>
+              <div style={{
+                maxWidth: '85%',
+                padding: '10px 14px',
+                borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                fontSize: '13px',
+                lineHeight: '1.6',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                ...(msg.role === 'user'
+                  ? { background: 'var(--accent, #2563eb)', color: '#fff' }
+                  : { background: 'var(--surface-muted, #f1f5f9)', color: 'var(--text-primary, #1e293b)' }
+                ),
+              }}>
+                {msg.content}
+              </div>
+            </div>
+          ))}
+
+          {loading && (
+            <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+              <div style={{
+                background: 'var(--surface-muted, #f1f5f9)',
+                color: 'var(--text-muted, #94a3b8)',
+                padding: '10px 14px',
+                borderRadius: '14px 14px 14px 4px',
+                fontSize: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}>
+                <span className="ai-typing-dots">
+                  <span>●</span><span>●</span><span>●</span>
+                </span>
+                {copy.thinking}
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input area */}
+        <div style={{
+          padding: '12px',
+          borderTop: '1px solid var(--border-color, #e2e8f0)',
+          flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={copy.placeholder}
+              disabled={!configured || loading}
+              style={{
+                flex: 1,
+                padding: '10px 14px',
+                borderRadius: '10px',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                background: 'var(--surface-muted, #f8fafc)',
+                color: 'var(--text-primary, #1e293b)',
+                fontSize: '13px',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="button"
+              onClick={sendMessage}
+              disabled={!configured || loading || !input.trim()}
+              style={{
+                padding: '10px 16px',
+                borderRadius: '10px',
+                border: 'none',
+                background: 'var(--accent, #2563eb)',
+                color: '#fff',
+                fontSize: '13px',
+                fontWeight: 700,
+                cursor: 'pointer',
+                opacity: (!configured || loading || !input.trim()) ? 0.4 : 1,
+                transition: 'opacity 0.2s',
+              }}
+            >
+              ➤
+            </button>
           </div>
         </div>
-      )}
+      </div>
+
+      <style>{`
+        .ai-typing-dots span {
+          animation: ai-dot-blink 1.4s infinite;
+          font-size: 8px;
+          margin-right: 2px;
+        }
+        .ai-typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .ai-typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes ai-dot-blink {
+          0%, 80%, 100% { opacity: 0.2; }
+          40% { opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          .ai-toggle-tab {
+            top: auto !important;
+            bottom: 80px !important;
+            transform: none !important;
+            height: 48px !important;
+            width: 28px !important;
+            font-size: 14px !important;
+          }
+        }
+      `}</style>
     </>
   );
 }
