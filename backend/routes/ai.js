@@ -6,33 +6,41 @@ const store = require('../db/store');
 const router = express.Router();
 const ADMIN_JWT_SECRET = config.adminJwtSecret;
 
-const checkAdmin = async (req, res, next) => {
+const checkUser = async (req, res, next) => {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
 
   if (!token) {
-    return res.status(401).json({ error: 'Admin token required' });
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
     req.admin = jwt.verify(token, ADMIN_JWT_SECRET);
+    req.admin._isAdmin = true;
     return next();
   } catch {
     try {
       const userPayload = jwt.verify(token, config.jwtSecret);
       const currentUser = await store.findUserByUsername(userPayload.username);
-      if (!currentUser || currentUser.role !== 'admin') {
-        return res.status(403).json({ error: 'Admin role required' });
+      if (!currentUser) {
+        return res.status(401).json({ error: 'User not found' });
       }
-      req.admin = { ...userPayload, email: currentUser.email, role: currentUser.role };
+      req.admin = { ...userPayload, email: currentUser.email, role: currentUser.role, _isAdmin: currentUser.role === 'admin' };
       return next();
     } catch {
-      return res.status(401).json({ error: 'Invalid admin token' });
+      return res.status(401).json({ error: 'Invalid token' });
     }
   }
 };
 
-router.use(checkAdmin);
+const checkAdmin = (req, res, next) => {
+  if (!req.admin?._isAdmin) {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  return next();
+};
+
+router.use(checkUser);
 
 const MIMO_BASE_URL = 'https://token-plan-sgp.xiaomimimo.com/v1';
 
@@ -135,7 +143,7 @@ router.get('/config', async (req, res) => {
   }
 });
 
-router.put('/config', async (req, res) => {
+router.put('/config', checkAdmin, async (req, res) => {
   try {
     const updated = await store.updateAiConfig(req.body);
     res.json({
