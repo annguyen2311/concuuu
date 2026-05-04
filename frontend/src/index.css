@@ -134,6 +134,10 @@ canvas {
   display: none;
 }
 
+.topbar-menu-btn {
+  display: none;
+}
+
 :where(.app-content) {
   min-width: 0;
   min-height: 100vh;
@@ -1123,6 +1127,10 @@ canvas {
     margin-left: 0 !important;
     width: 100%;
     padding-bottom: 4rem;
+  }
+
+  .topbar-menu-btn {
+    display: flex;
   }
 
   .header .topbar-inner {

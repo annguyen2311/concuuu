@@ -414,6 +414,7 @@ function App() {
           onOpenNotifications={() => setShowLoginAnnouncement(Boolean(latestAnnouncement))}
           onOpenChat={handleOpenChat}
           onLogout={handleLogout}
+          onOpenMenu={() => setMobileMenuOpen(true)}
           notificationCount={latestAnnouncement ? 1 : 0}
         />
         <Routes>

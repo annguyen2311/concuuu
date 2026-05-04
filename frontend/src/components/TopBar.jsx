@@ -40,7 +40,7 @@ const labels = {
   },
 };
 
-const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogout, notificationCount = 0 }, ref) {
+const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenNotifications, onOpenChat, onLogout, onOpenMenu, notificationCount = 0 }, ref) {
   const [searchQuery, setSearchQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [extraActions, setExtraActions] = useState([]);
@@ -80,6 +80,15 @@ const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenN
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-[var(--surface-overlay)]/90 backdrop-blur-xl">
       <div className="topbar-inner flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+        <button
+          type="button"
+          onClick={onOpenMenu}
+          className="topbar-menu-btn hidden items-center justify-center rounded-xl bg-[var(--surface-muted)] p-2 text-[var(--text-secondary)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+          aria-label="Open menu"
+        >
+          <span className="text-xl leading-none">☰</span>
+        </button>
+
         <div className="topbar-search flex-1 max-w-2xl">
           <div className="relative">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">🔍</span>
