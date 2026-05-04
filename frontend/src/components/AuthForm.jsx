@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
-function AuthForm({ setUser, brandName = 'Cộng đồng sinh viên NTTU', initialMode = 'login' }) {
+function AuthForm({ setUser, brandName = 'Cộng đồng sinh viên NTTU', initialMode = 'login', loginCoverImage, loginTitle, loginDescription, loginBadges }) {
+  const displayTitle = loginTitle || brandName;
+  const displayDescription = loginDescription || 'Không gian sinh viên NTTU kết nối, chia sẻ bài viết, tìm cơ hội việc làm và trò chuyện trong cộng đồng.';
+  const displayBadges = loginBadges ? loginBadges.split(',').map(b => b.trim()).filter(Boolean) : ['Blog', 'Chat', 'Jobs'];
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
@@ -50,20 +53,23 @@ function AuthForm({ setUser, brandName = 'Cộng đồng sinh viên NTTU', initi
   return (
     <main className="flex min-h-screen items-center justify-center p-4" style={{ background: 'var(--page-gradient), var(--page-bg)' }}>
       <section className="auth-section grid w-full max-w-5xl overflow-hidden rounded-[1.25rem] border border-white/40 bg-white shadow-[0_28px_80px_rgba(15,23,42,0.22)] md:grid-cols-[1fr_26rem]">
-        <div className="auth-panel flex min-h-[34rem] flex-col justify-between bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] p-8 text-white">
-          <div>
+        <div
+          className="auth-panel relative flex min-h-[34rem] flex-col justify-between bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] p-8 text-white"
+          style={loginCoverImage ? { backgroundImage: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.55)), url(${loginCoverImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
+        >
+          <div className="relative z-10">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 text-2xl font-black ring-1 ring-white/25">
               N
             </div>
-            <h1 className="mt-8 max-w-xl text-4xl font-black leading-tight md:text-5xl">{brandName}</h1>
+            <h1 className="mt-8 max-w-xl text-4xl font-black leading-tight md:text-5xl">{displayTitle}</h1>
             <p className="mt-4 max-w-lg text-base font-medium leading-7 text-white/82">
-              Không gian sinh viên NTTU kết nối, chia sẻ bài viết, tìm cơ hội việc làm và trò chuyện trong cộng đồng.
+              {displayDescription}
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-3 text-center text-sm font-bold">
-            <div className="rounded-xl bg-white/12 px-3 py-3 ring-1 ring-white/15">Blog</div>
-            <div className="rounded-xl bg-white/12 px-3 py-3 ring-1 ring-white/15">Chat</div>
-            <div className="rounded-xl bg-white/12 px-3 py-3 ring-1 ring-white/15">Jobs</div>
+          <div className="relative z-10 grid gap-3 text-center text-sm font-bold" style={{ gridTemplateColumns: `repeat(${Math.min(displayBadges.length, 4)}, minmax(0, 1fr))` }}>
+            {displayBadges.map((badge) => (
+              <div key={badge} className="rounded-xl bg-white/12 px-3 py-3 ring-1 ring-white/15">{badge}</div>
+            ))}
           </div>
         </div>
 

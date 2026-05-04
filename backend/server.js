@@ -17,6 +17,7 @@ const bookmarksRoutes = require('./routes/bookmarks');
 const usersRoutes = require('./routes/users');
 const adminRoutes = require('./routes/admin');
 const feedbackRoutes = require('./routes/feedback');
+const aiRoutes = require('./routes/ai');
 
 const app = express();
 const server = http.createServer(app);
@@ -51,6 +52,7 @@ app.use('/api/bookmarks', bookmarksRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/api/health', async (req, res) => {
   try {

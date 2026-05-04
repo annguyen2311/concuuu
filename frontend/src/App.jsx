@@ -18,6 +18,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Friends from "./pages/Friends";
 import Feedback from "./pages/Feedback";
 import MobileBottomNav from "./components/MobileBottomNav";
+import AiAssistant from "./components/AiAssistant";
 import { getLevelInfo } from "./utils/level";
 
 const defaultSettings = {
@@ -33,6 +34,10 @@ const defaultTheme = {
   pageBg: '#f3f6fb',
   sidebarBg: 'rgba(15, 23, 42, 0.96)',
   customCss: '',
+  loginCoverImage: '',
+  loginTitle: '',
+  loginDescription: '',
+  loginBadges: '',
 };
 
 const copyByLanguage = {
@@ -400,7 +405,7 @@ function App() {
   }
 
   if (!user) {
-    return <AuthForm setUser={handleUserChange} brandName={brandName} initialMode={location.pathname.includes('register') ? 'register' : 'login'} />;
+    return <AuthForm setUser={handleUserChange} brandName={brandName} initialMode={location.pathname.includes('register') ? 'register' : 'login'} loginCoverImage={theme.loginCoverImage} loginTitle={theme.loginTitle} loginDescription={theme.loginDescription} loginBadges={theme.loginBadges} />;
   }
 
   return (
@@ -442,6 +447,7 @@ function App() {
         </Routes>
       </div>
       <MobileBottomNav language={language} />
+      {user?.role === 'admin' && <AiAssistant language={language} />}
       <LoginAnnouncementModal
         open={showLoginAnnouncement}
         announcement={latestAnnouncement}

@@ -1519,6 +1519,15 @@ const defaultTheme = {
   pageBg: '#f3f6fb',
   sidebarBg: 'rgba(15, 23, 42, 0.96)',
   customCss: '',
+  loginCoverImage: '',
+  loginTitle: '',
+  loginDescription: '',
+  loginBadges: '',
+};
+
+const defaultAiConfig = {
+  apiKey: '',
+  model: 'MiMo-V2.5-Pro',
 };
 
 async function getAppTheme() {
@@ -1545,6 +1554,10 @@ async function updateAppTheme(updates = {}) {
     pageBg: String(updates.pageBg ?? current.pageBg).trim() || defaultTheme.pageBg,
     sidebarBg: String(updates.sidebarBg ?? current.sidebarBg).trim() || defaultTheme.sidebarBg,
     customCss: String(updates.customCss ?? current.customCss).slice(0, 8000),
+    loginCoverImage: String(updates.loginCoverImage ?? current.loginCoverImage ?? '').trim().slice(0, 2000),
+    loginTitle: String(updates.loginTitle ?? current.loginTitle ?? '').trim().slice(0, 120),
+    loginDescription: String(updates.loginDescription ?? current.loginDescription ?? '').trim().slice(0, 500),
+    loginBadges: String(updates.loginBadges ?? current.loginBadges ?? '').trim().slice(0, 200),
   };
 
   await pool.query(`
@@ -1554,6 +1567,33 @@ async function updateAppTheme(updates = {}) {
   `, [JSON.stringify(next)]);
 
   return getAppTheme();
+}
+
+async function getAiConfig() {
+  const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'ai_config'");
+  if (!rows[0]) return defaultAiConfig;
+  try {
+    const parsed = JSON.parse(rows[0].value || '{}');
+    return { ...defaultAiConfig, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
+  } catch {
+    return defaultAiConfig;
+  }
+}
+
+async function updateAiConfig(updates = {}) {
+  const current = await getAiConfig();
+  const next = {
+    apiKey: String(updates.apiKey ?? current.apiKey ?? '').trim().slice(0, 500),
+    model: String(updates.model ?? current.model ?? defaultAiConfig.model).trim().slice(0, 100) || defaultAiConfig.model,
+  };
+
+  await pool.query(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES ('ai_config', $1, NOW())
+    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+  `, [JSON.stringify(next)]);
+
+  return getAiConfig();
 }
 
 module.exports = {
@@ -1637,4 +1677,6 @@ module.exports = {
   getStatistics,
   getAppTheme,
   updateAppTheme,
+  getAiConfig,
+  updateAiConfig,
 };

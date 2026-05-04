@@ -20,6 +20,7 @@ const tabs = [
   { id: 'feedback', label: 'Feedback' },
   { id: 'broadcast', label: 'Broadcast' },
   { id: 'theme', label: 'Theme' },
+  { id: 'ai', label: 'AI' },
   { id: 'system', label: 'Server' },
 ];
 
@@ -30,6 +31,10 @@ const defaultTheme = {
   pageBg: '#f3f6fb',
   sidebarBg: 'rgba(15, 23, 42, 0.96)',
   customCss: '',
+  loginCoverImage: '',
+  loginTitle: '',
+  loginDescription: '',
+  loginBadges: '',
 };
 
 const formatDate = (value) => {
@@ -72,6 +77,8 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
   const [messageViewer, setMessageViewer] = useState({ open: false, loading: false, room: null, messages: [] });
   const [adminForm, setAdminForm] = useState({ username: '', email: '', password: '', role: 'admin' });
   const [themeForm, setThemeForm] = useState({ ...defaultTheme, ...(appTheme || {}) });
+  const [aiConfig, setAiConfig] = useState({ apiKey: '', apiKeySet: false, model: 'MiMo-V2.5-Pro' });
+  const [aiConfigLoading, setAiConfigLoading] = useState(false);
   const noticeTimerRef = useRef(null);
 
   const userToken = localStorage.getItem('token');
@@ -452,6 +459,41 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
       showNotice('error', error.response?.data?.error || 'Không thể cập nhật theme server.');
     }
   };
+
+  const loadAiConfig = async () => {
+    try {
+      setAiConfigLoading(true);
+      const res = await axios.get('/api/ai/config', adminConfig());
+      setAiConfig({ apiKey: '', apiKeySet: res.data.apiKeySet, model: res.data.model || 'MiMo-V2.5-Pro' });
+    } catch {
+      setAiConfig({ apiKey: '', apiKeySet: false, model: 'MiMo-V2.5-Pro' });
+    } finally {
+      setAiConfigLoading(false);
+    }
+  };
+
+  const saveAiConfig = async (event) => {
+    event.preventDefault();
+    try {
+      setAiConfigLoading(true);
+      const payload = {};
+      if (aiConfig.apiKey) payload.apiKey = aiConfig.apiKey;
+      if (aiConfig.model) payload.model = aiConfig.model;
+      const res = await axios.put('/api/ai/config', payload, adminConfig());
+      setAiConfig({ apiKey: '', apiKeySet: true, model: res.data.model || aiConfig.model });
+      showNotice('success', 'Đã lưu cấu hình AI.');
+    } catch (error) {
+      showNotice('error', error.response?.data?.error || 'Không thể lưu cấu hình AI.');
+    } finally {
+      setAiConfigLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'ai' && activeAdminToken && aiConfig.apiKeySet === false && !aiConfig.apiKey) {
+      loadAiConfig();
+    }
+  }, [activeTab]);
 
   if (loading) {
     return (
@@ -979,6 +1021,44 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
                     placeholder={'/* Ví dụ */\n.card { border-radius: 8px; }'}
                   />
                 </label>
+
+                <div className="admin-divider" />
+                <p className="admin-meta" style={{ marginBottom: '0.5rem' }}>Tùy chỉnh trang đăng nhập</p>
+
+                <label>
+                  Ảnh bìa đăng nhập (URL)
+                  <input
+                    value={themeForm.loginCoverImage}
+                    onChange={(event) => setThemeForm((prev) => ({ ...prev, loginCoverImage: event.target.value }))}
+                    placeholder="https://example.com/cover.jpg"
+                  />
+                </label>
+                <label>
+                  Tiêu đề đăng nhập
+                  <input
+                    value={themeForm.loginTitle}
+                    onChange={(event) => setThemeForm((prev) => ({ ...prev, loginTitle: event.target.value }))}
+                    placeholder="Để trống = dùng tên cộng đồng"
+                  />
+                </label>
+                <label>
+                  Mô tả đăng nhập
+                  <textarea
+                    rows="3"
+                    value={themeForm.loginDescription}
+                    onChange={(event) => setThemeForm((prev) => ({ ...prev, loginDescription: event.target.value }))}
+                    placeholder="Để trống = dùng mô tả mặc định"
+                  />
+                </label>
+                <label>
+                  Feature badges (phân cách bằng dấu phẩy)
+                  <input
+                    value={themeForm.loginBadges}
+                    onChange={(event) => setThemeForm((prev) => ({ ...prev, loginBadges: event.target.value }))}
+                    placeholder="Blog, Chat, Jobs"
+                  />
+                </label>
+
                 <button type="submit" className="admin-button primary">Lưu theme server</button>
               </form>
             </Panel>
@@ -1005,6 +1085,83 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
                 <p className="admin-meta">
                   CSS custom được lưu trong SQLite và áp dụng lại khi client tải app.
                 </p>
+              </div>
+            </Panel>
+          </div>
+        </section>
+      )}
+
+      {activeTab === 'ai' && (
+        <section className="admin-section">
+          <div className="admin-section-head">
+            <div>
+              <h2>AI Server Assistant</h2>
+              <p>Trợ lý AI quản lý server dựa trên MiMo API. Chỉ admin mới thấy và sử dụng.</p>
+            </div>
+          </div>
+
+          <div className="admin-grid two">
+            <Panel title="Cấu hình AI">
+              <form onSubmit={saveAiConfig} className="admin-form">
+                <label>
+                  API Key (MiMo)
+                  <input
+                    type="password"
+                    value={aiConfig.apiKey}
+                    onChange={(event) => setAiConfig((prev) => ({ ...prev, apiKey: event.target.value }))}
+                    placeholder={aiConfig.apiKeySet ? '•••••••••••• (đã đặt)' : 'Nhập MiMo API key'}
+                  />
+                </label>
+                <label>
+                  Model
+                  <select
+                    value={aiConfig.model}
+                    onChange={(event) => setAiConfig((prev) => ({ ...prev, model: event.target.value }))}
+                  >
+                    <option value="MiMo-V2.5-Pro">MiMo-V2.5-Pro</option>
+                    <option value="MiMo-V2-Flash">MiMo-V2-Flash</option>
+                  </select>
+                </label>
+                <div className="admin-form-row">
+                  <button type="submit" className="admin-button primary" disabled={aiConfigLoading}>
+                    {aiConfigLoading ? 'Đang lưu...' : 'Lưu cấu hình AI'}
+                  </button>
+                  <button type="button" className="admin-button ghost" onClick={loadAiConfig} disabled={aiConfigLoading}>
+                    Tải lại
+                  </button>
+                </div>
+                {aiConfig.apiKeySet && (
+                  <p className="admin-meta">API key đã được cấu hình. Nhập key mới để thay đổi.</p>
+                )}
+              </form>
+            </Panel>
+
+            <Panel title="Hướng dẫn">
+              <div className="admin-list">
+                <div className="admin-list-row">
+                  <div>
+                    <strong>1. Lấy API key</strong>
+                    <span>Đăng ký tại MiMo Platform để nhận API key.</span>
+                  </div>
+                </div>
+                <div className="admin-list-row">
+                  <div>
+                    <strong>2. Nhập key vào form bên trái</strong>
+                    <span>Key được lưu trong database, không cần redeploy.</span>
+                  </div>
+                </div>
+                <div className="admin-list-row">
+                  <div>
+                    <strong>3. Sử dụng trợ lý AI</strong>
+                    <span>Nhấn nút 🤖 góc phải dưới để chat với AI về server.</span>
+                  </div>
+                </div>
+                <div className="admin-list-row">
+                  <div>
+                    <strong>Chức năng</strong>
+                    <span>Hỏi về user, bài viết, phòng chat, thống kê server, và các thao tác quản trị.</span>
+                  </div>
+                </div>
               </div>
             </Panel>
           </div>
