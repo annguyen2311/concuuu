@@ -1130,7 +1130,7 @@ canvas {
   }
 
   .topbar-menu-btn {
-    display: flex;
+    display: flex !important;
   }
 
   .header .topbar-inner {
