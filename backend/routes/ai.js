@@ -44,7 +44,7 @@ router.use(checkUser);
 
 const MIMO_BASE_URL = 'https://token-plan-sgp.xiaomimimo.com/v1';
 
-router.post('/chat', async (req, res) => {
+router.post('/chat', checkAdmin, async (req, res) => {
   try {
     const { message, conversationHistory = [] } = req.body;
     if (!message || typeof message !== 'string') {
@@ -129,7 +129,7 @@ Respond concisely in the same language the user writes in (Vietnamese or English
   }
 });
 
-router.get('/config', async (req, res) => {
+router.get('/config', checkAdmin, async (req, res) => {
   try {
     const aiCfg = await store.getAiConfig();
     res.json({

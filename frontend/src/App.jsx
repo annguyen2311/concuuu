@@ -447,7 +447,7 @@ function App() {
         </Routes>
       </div>
       <MobileBottomNav language={language} />
-      {user && <AiAssistant language={language} />}
+      {user?.role === 'admin' && <AiAssistant language={language} />}
       <LoginAnnouncementModal
         open={showLoginAnnouncement}
         announcement={latestAnnouncement}

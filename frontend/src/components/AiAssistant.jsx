@@ -34,15 +34,26 @@ export default function AiAssistant({ language = 'vi' }) {
   };
 
   useEffect(() => {
-    if (open && configured === null) {
-      axios.get('/api/ai/config', authConfig()).then((res) => {
-        setConfigured(res.data.apiKeySet);
-      }).catch(() => setConfigured(false));
-    }
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 200);
-    }
-  }, [open, configured]);
+    if (!open) return undefined;
+
+    let cancelled = false;
+    setConfigured(null);
+
+    axios.get('/api/ai/config', authConfig())
+      .then((res) => {
+        if (!cancelled) setConfigured(res.data.apiKeySet);
+      })
+      .catch(() => {
+        if (!cancelled) setConfigured(false);
+      });
+
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(focusTimer);
+    };
+  }, [open]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -80,7 +91,7 @@ export default function AiAssistant({ language = 'vi' }) {
 
   return (
     <>
-      {/* Toggle tab on right edge */}
+      {/* Floating AI entry point */}
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -88,27 +99,28 @@ export default function AiAssistant({ language = 'vi' }) {
         title={copy.title}
         style={{
           position: 'fixed',
-          right: open ? '320px' : '0',
-          top: '50%',
-          transform: 'translateY(-50%)',
+          right: '24px',
+          bottom: '24px',
+          transform: 'none',
           zIndex: 1001,
-          width: '32px',
-          height: '80px',
-          display: 'flex',
+          width: '60px',
+          height: '60px',
+          display: open ? 'none' : 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           background: 'linear-gradient(135deg, #7c3aed, #2563eb)',
           color: '#fff',
           border: 'none',
-          borderRadius: '8px 0 0 8px',
+          borderRadius: '999px',
           cursor: 'pointer',
-          fontSize: '16px',
-          boxShadow: '-2px 0 12px rgba(124, 58, 237, 0.3)',
-          transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          writingMode: open ? 'horizontal-tb' : 'vertical-rl',
+          fontSize: '18px',
+          fontWeight: 900,
+          boxShadow: '0 18px 42px rgba(37, 99, 235, 0.34)',
+          transition: 'transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease',
+          writingMode: 'horizontal-tb',
         }}
       >
-        {open ? '✕' : '🤖'}
+        AI
       </button>
 
       {/* Backdrop on mobile */}
@@ -338,12 +350,12 @@ export default function AiAssistant({ language = 'vi' }) {
         }
         @media (max-width: 768px) {
           .ai-toggle-tab {
-            top: auto !important;
-            bottom: 80px !important;
-            transform: none !important;
-            height: 48px !important;
-            width: 28px !important;
-            font-size: 14px !important;
+            right: 16px !important;
+            bottom: calc(5rem + env(safe-area-inset-bottom, 0px)) !important;
+            height: 56px !important;
+            width: 56px !important;
+            border-radius: 999px !important;
+            font-size: 16px !important;
           }
         }
       `}</style>
