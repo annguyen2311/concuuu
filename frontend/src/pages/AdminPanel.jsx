@@ -8,7 +8,7 @@ const emptyOverview = {
   recentActivities: [],
   recentUsers: [],
   topRooms: [],
-  storage: { status: 'offline', database: 'SQLite' },
+  storage: { status: 'offline', database: 'PostgreSQL' },
 };
 
 const tabs = [
@@ -45,7 +45,7 @@ const formatDate = (value) => {
 
 const normalize = (value) => String(value || '').toLowerCase();
 
-function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
+function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved, language }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [overview, setOverview] = useState(emptyOverview);
   const [users, setUsers] = useState([]);
@@ -480,7 +480,7 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
       if (aiConfig.apiKey) payload.apiKey = aiConfig.apiKey;
       if (aiConfig.model) payload.model = aiConfig.model;
       const res = await axios.put('/api/ai/config', payload, adminConfig());
-      setAiConfig({ apiKey: '', apiKeySet: true, model: res.data.model || aiConfig.model });
+      setAiConfig({ apiKey: '', apiKeySet: res.data.apiKeySet, model: res.data.model || aiConfig.model });
       showNotice('success', 'Đã lưu cấu hình AI.');
     } catch (error) {
       showNotice('error', error.response?.data?.error || 'Không thể lưu cấu hình AI.');
@@ -771,7 +771,7 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
                   <input
                     type="number"
                     value={roomForm.position}
-                    onChange={(event) => setRoomForm((prev) => ({ ...prev, position: event.target.value }))}
+                    onChange={(event) => setRoomForm((prev) => ({ ...prev, position: parseInt(event.target.value, 10) || 0 }))}
                     placeholder="Thứ tự"
                   />
                   <label className="admin-check">
@@ -1083,7 +1083,7 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
                   </div>
                 </div>
                 <p className="admin-meta">
-                  CSS custom được lưu trong SQLite và áp dụng lại khi client tải app.
+                  CSS custom được lưu trong database và áp dụng lại khi client tải app.
                 </p>
               </div>
             </Panel>
@@ -1198,7 +1198,7 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved }) {
 
           <Panel title="Server health">
             <div className="admin-health-grid">
-              <div><span>Database</span><strong>{overview.storage?.database || 'SQLite'}</strong></div>
+              <div><span>Database</span><strong>{overview.storage?.database || 'PostgreSQL'}</strong></div>
               <div><span>Status</span><strong>{overview.storage?.status || 'online'}</strong></div>
               <div><span>Last sync</span><strong>{formatDate(overview.generatedAt)}</strong></div>
               <div><span>Current admin</span><strong>{currentUser}</strong></div>

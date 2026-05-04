@@ -60,7 +60,7 @@ router.post('/chat', async (req, res) => {
     const systemPrompt = `You are an AI server management assistant for StudentNet (Cộng đồng sinh viên NTTU), a student community platform.
 
 Current server status:
-- Total users: ${stats.users}
+- Total users: ${stats.members}
 - Total posts: ${stats.posts}
 - Total jobs: ${stats.jobs}
 - Active chat rooms: ${rooms.length}
@@ -118,12 +118,11 @@ Respond concisely in the same language the user writes in (Vietnamese or English
 
 router.get('/config', async (req, res) => {
   try {
-    const config = await store.getAiConfig();
-    // Mask the API key for security
+    const aiCfg = await store.getAiConfig();
     res.json({
-      apiKey: config.apiKey ? `${config.apiKey.slice(0, 8)}...${config.apiKey.slice(-4)}` : '',
-      apiKeySet: Boolean(config.apiKey),
-      model: config.model,
+      apiKey: aiCfg.apiKey ? `${aiCfg.apiKey.slice(0, 8)}...${aiCfg.apiKey.slice(-4)}` : '',
+      apiKeySet: Boolean(aiCfg.apiKey),
+      model: aiCfg.model,
     });
   } catch (err) {
     console.error('AI config error:', err);
