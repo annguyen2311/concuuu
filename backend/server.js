@@ -66,10 +66,10 @@ app.get('/api/health', async (req, res) => {
       stats,
     });
   } catch (error) {
+    console.error('Health check error:', error.message);
     res.status(500).json({
       status: 'error',
       service: 'studentnet',
-      error: error.message,
     });
   }
 });
@@ -204,7 +204,7 @@ io.on('connection', socket => {
   });
 });
 
-app.get('*', (req, res) => {
+app.all('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
     res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   } else {

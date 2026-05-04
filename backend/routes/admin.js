@@ -261,11 +261,13 @@ router.post('/create-admin', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const allowedRoles = new Set(['admin', 'moderator']);
+    const safeRole = allowedRoles.has(role) ? role : 'admin';
     const admin = await store.createAdmin({
       username,
       email,
       password: hashedPassword,
-      role: role || 'admin',
+      role: safeRole,
     });
     const { password: _password, ...safeAdmin } = admin;
     res.json({ message: 'Admin created successfully', admin: safeAdmin });
@@ -416,7 +418,7 @@ router.post('/announcements', async (req, res) => {
       title: String(title).trim(),
       body: String(body || '').trim(),
       date: 'Vừa xong',
-      createdBy: createdBy || 'admin',
+      createdBy: req.admin?.username || 'admin',
       isBroadcast: true,
     });
 

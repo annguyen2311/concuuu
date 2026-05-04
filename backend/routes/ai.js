@@ -80,9 +80,14 @@ You can help with:
 
 Respond concisely in the same language the user writes in (Vietnamese or English). Be helpful and direct.`;
 
+    const allowedRoles = new Set(['user', 'assistant']);
+    const sanitizedHistory = conversationHistory
+      .filter((m) => m && allowedRoles.has(m.role) && typeof m.content === 'string')
+      .slice(-20);
+
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory.slice(-20), // Keep last 20 messages for context
+      ...sanitizedHistory,
       { role: 'user', content: message },
     ];
 

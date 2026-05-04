@@ -392,10 +392,12 @@ async function listDiscoverableUsers(viewer) {
   const users = await listUsers();
   const filtered = users.filter((user) => user.username !== viewer);
 
+  const viewerUser = viewer ? await findUserByUsername(viewer) : null;
+  const viewerIsAdmin = viewerUser?.role === 'admin';
+
   const results = [];
   for (const user of filtered) {
-    const canView = await canViewProfile(viewer, user.username);
-    if (canView) {
+    if (viewerIsAdmin || !user.settings?.privateProfile) {
       const friendStatus = viewer ? await getFriendshipStatus(viewer, user.username) : 'none';
       results.push({
         ...mapSafeUser(user),
@@ -454,7 +456,7 @@ async function sendFriendRequest(username, friendUsername) {
     };
   }
 
-  await pool.query('INSERT INTO friendships (requester, addressee, status) VALUES ($1, $2, $3)', [username, friendUsername, 'pending']);
+  await pool.query('INSERT INTO friendships (requester, addressee, status) VALUES ($1, $2, $3) ON CONFLICT (requester, addressee) DO NOTHING', [username, friendUsername, 'pending']);
   return { requester: username, addressee: friendUsername, status: 'pending' };
 }
 
@@ -803,7 +805,7 @@ async function togglePostLike(postId, username) {
   if (existing.length > 0) {
     await pool.query('DELETE FROM post_likes WHERE post_id = $1 AND username = $2', [postId, username]);
   } else {
-    await pool.query('INSERT INTO post_likes (post_id, username) VALUES ($1, $2)', [postId, username]);
+    await pool.query('INSERT INTO post_likes (post_id, username) VALUES ($1, $2) ON CONFLICT (post_id, username) DO NOTHING', [postId, username]);
   }
   return findPostById(postId);
 }
@@ -861,10 +863,10 @@ async function deleteJob(id) {
 
 async function createBookmark({ userId, postId, type }) {
   const { rows } = await pool.query(
-    'INSERT INTO bookmarks (user_id, post_id, type) VALUES ($1, $2, $3) RETURNING *',
+    'INSERT INTO bookmarks (user_id, post_id, type) VALUES ($1, $2, $3) ON CONFLICT (user_id, post_id, type) DO NOTHING RETURNING *',
     [userId, postId, type]
   );
-  return mapBookmark(rows[0]);
+  return rows[0] ? mapBookmark(rows[0]) : null;
 }
 
 async function findBookmark({ userId, postId, type }) {
@@ -1011,7 +1013,7 @@ async function toggleMessageReaction(messageId, { username, reaction }) {
       WHERE message_id = $2 AND username = $3
     `, [reaction, messageId, username]);
   } else {
-    await pool.query('INSERT INTO message_reactions (message_id, username, reaction) VALUES ($1, $2, $3)', [messageId, username, reaction]);
+    await pool.query('INSERT INTO message_reactions (message_id, username, reaction) VALUES ($1, $2, $3) ON CONFLICT (message_id, username) DO UPDATE SET reaction = $3, created_at = NOW()', [messageId, username, reaction]);
   }
 
   return findMessageById(messageId);
@@ -1078,7 +1080,10 @@ async function makeUniquePublicRoomId(name) {
   return roomId;
 }
 
+let defaultsEnsured = false;
+
 async function ensureDefaultChatRooms() {
+  if (defaultsEnsured) return;
   const deletedRoomIds = await getDeletedRoomIds();
   const rooms = [
     { id: 'announcements', name: 'thông-báo', icon: '#', category: 'Bắt đầu', topic: 'Thông báo quan trọng từ cộng đồng', position: 1, isLocked: true },
@@ -1108,6 +1113,7 @@ async function ensureDefaultChatRooms() {
       ON CONFLICT (id) DO NOTHING
     `, [room.id, room.name, room.icon, room.category, room.topic, room.position, room.isLocked]);
   }
+  defaultsEnsured = true;
 }
 
 async function ensurePrivateRoom(username, friendUsername) {
@@ -1172,7 +1178,7 @@ async function createGroupRoom({ name, members = [], createdBy, icon = '👨‍�
   const memberChecks = [createdBy, ...members]
     .map((member) => String(member || '').trim())
     .filter(Boolean)
-    .filter((member) => member === createdBy || !friendNames || true);
+    .filter((member) => member === createdBy || canInviteAnyUser || friendNames.has(member));
 
   const cleanMembers = [];
   for (const member of [...new Set(memberChecks)]) {
@@ -1334,12 +1340,48 @@ async function listAdminRooms() {
     ORDER BY cr.created_at DESC
   `);
 
-  return Promise.all(rows.map(async (row) => ({
-    ...await mapRoom(row),
-    memberCount: parseInt(row.member_count, 10) || 0,
-    messageCount: parseInt(row.message_count, 10) || 0,
-    lastMessageAt: row.last_message_at || '',
-  })));
+  return Promise.all(rows.map(async (row) => {
+    const memberRowsResult = await pool.query(`
+      SELECT u.username, u.avatar, crm.role
+      FROM chat_room_members crm
+      LEFT JOIN users u ON u.username = crm.username
+      WHERE crm.room_id = $1
+      ORDER BY CASE crm.role WHEN 'owner' THEN 0 ELSE 1 END, crm.username ASC
+    `, [row.id]);
+
+    const latestResult = await pool.query(`
+      SELECT username, message, created_at
+      FROM messages WHERE room = $1
+      ORDER BY created_at DESC, id DESC LIMIT 1
+    `, [row.id]);
+
+    const latest = latestResult.rows[0];
+    const members = memberRowsResult.rows.map((member) => ({
+      username: member.username,
+      avatar: member.avatar || (member.username ? member.username.charAt(0).toUpperCase() : 'U'),
+      role: member.role || 'member',
+    }));
+
+    return {
+      id: row.id,
+      name: row.name,
+      icon: row.icon,
+      type: row.type,
+      category: row.category || (row.type === 'public' ? 'Cộng đồng' : ''),
+      topic: row.topic || '',
+      position: row.position || 0,
+      isLocked: Boolean(row.is_locked),
+      createdBy: row.created_by,
+      createdAt: row.created_at,
+      lastMessage: latest?.message || '',
+      lastUser: latest?.username || '',
+      lastTime: latest?.created_at || '',
+      memberCount: parseInt(row.member_count, 10) || 0,
+      messageCount: parseInt(row.message_count, 10) || 0,
+      lastMessageAt: row.last_message_at || '',
+      members,
+    };
+  }));
 }
 
 async function deleteRoom(roomId) {

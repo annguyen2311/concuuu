@@ -13,6 +13,10 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Username, email, and password required' });
         }
 
+        if (!/^[a-zA-Z0-9_.-]{3,30}$/.test(username)) {
+            return res.status(400).json({ error: 'Username must be 3-30 characters (letters, numbers, underscores, dots, hyphens)' });
+        }
+
         if (password.length < 6) {
             return res.status(400).json({ error: 'Password must be at least 6 characters' });
         }
@@ -28,7 +32,7 @@ router.post('/register', async (req, res) => {
 
         const hashed = await bcrypt.hash(password, 10);
         const user = await store.createUser({ username, email, password: hashed });
-        res.json({
+        res.status(201).json({
             msg: 'OK',
             user: {
                 username: user.username,
@@ -42,7 +46,7 @@ router.post('/register', async (req, res) => {
         });
     } catch (e) {
         console.error('❌ Registration error:', e.message);
-        res.status(400).json({ error: e.message });
+        res.status(400).json({ error: 'Registration failed' });
     }
 });
 
@@ -83,7 +87,7 @@ router.post('/login', async (req, res) => {
         });
     } catch (e) {
         console.error('❌ Login error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Login failed' });
     }
 });
 
@@ -100,7 +104,7 @@ router.get('/top-users', async (req, res) => {
         })));
     } catch (e) {
         console.error('❌ Top users error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load top users' });
     }
 });
 
@@ -120,7 +124,7 @@ router.get('/activities', async (req, res) => {
         res.json(activities);
     } catch (e) {
         console.error('❌ Activities error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load activities' });
     }
 });
 
@@ -129,7 +133,7 @@ router.get('/events', async (req, res) => {
         res.json(await store.listEvents());
     } catch (e) {
         console.error('❌ Events error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load events' });
     }
 });
 
@@ -138,7 +142,7 @@ router.get('/announcements', async (req, res) => {
         res.json(await store.listAnnouncements());
     } catch (e) {
         console.error('❌ Announcements error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load announcements' });
     }
 });
 
@@ -147,7 +151,7 @@ router.get('/theme', async (req, res) => {
         res.json(await store.getAppTheme());
     } catch (e) {
         console.error('❌ Theme error:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load theme' });
     }
 });
 

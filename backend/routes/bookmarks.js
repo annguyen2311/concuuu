@@ -26,7 +26,7 @@ router.get('/user/:username', requireUser, requireSameUser((req) => req.params.u
         res.json(bookmarkedItems);
     } catch (e) {
         console.error('❌ Error fetching bookmarks:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to load bookmarks' });
     }
 });
 
@@ -37,16 +37,14 @@ router.post('/', requireUser, requireSameUser((req) => req.body.userId), async (
             return res.status(400).json({ error: 'userId, postId, type required' });
         }
 
-        const existing = await store.findBookmark({ userId, postId, type });
-        if (existing) {
+        const bookmark = await store.createBookmark({ userId, postId, type });
+        if (!bookmark) {
             return res.status(400).json({ error: 'Already bookmarked' });
         }
-
-        const bookmark = await store.createBookmark({ userId, postId, type });
         res.json(bookmark);
     } catch (e) {
         console.error('❌ Error creating bookmark:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to create bookmark' });
     }
 });
 
@@ -61,7 +59,7 @@ router.delete('/', requireUser, requireSameUser((req) => req.query.userId), asyn
         res.json(result);
     } catch (e) {
         console.error('❌ Error deleting bookmark:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Failed to delete bookmark' });
     }
 });
 
