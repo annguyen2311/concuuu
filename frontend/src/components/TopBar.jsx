@@ -83,7 +83,7 @@ const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenN
         <button
           type="button"
           onClick={onOpenMenu}
-          className="topbar-menu-btn hidden items-center justify-center rounded-xl bg-[var(--surface-muted)] p-2 text-[var(--text-secondary)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+          className="topbar-menu-btn items-center justify-center rounded-xl bg-[var(--surface-muted)] p-2 text-[var(--text-secondary)] transition hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
           aria-label="Open menu"
         >
           <span className="text-xl leading-none">☰</span>
