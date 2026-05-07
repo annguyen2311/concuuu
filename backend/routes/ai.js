@@ -5,6 +5,7 @@ const store = require('../db/store');
 
 const router = express.Router();
 const ADMIN_JWT_SECRET = config.adminJwtSecret;
+const DEFAULT_MIMO_MODEL = 'MiMo-V2.5-Pro';
 
 const checkUser = async (req, res, next) => {
   const header = req.headers.authorization || '';
@@ -52,7 +53,10 @@ router.post('/chat', checkAdmin, async (req, res) => {
     }
 
     const aiConfig = await store.getAiConfig();
-    if (!aiConfig.apiKey) {
+    const apiKey = aiConfig.apiKey || process.env.MIMO_API_KEY || process.env.XIAOMIMIMO_API_KEY || '';
+    const model = aiConfig.model || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL;
+
+    if (!apiKey) {
       return res.status(400).json({ error: 'AI API key not configured. Set it in Admin Panel > AI Assistant.' });
     }
 
@@ -103,10 +107,10 @@ Respond concisely in the same language the user writes in (Vietnamese or English
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${aiConfig.apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: aiConfig.model || 'MiMo-V2.5-Pro',
+        model,
         messages,
         max_tokens: 2048,
         temperature: 0.7,
@@ -132,10 +136,11 @@ Respond concisely in the same language the user writes in (Vietnamese or English
 router.get('/config', checkAdmin, async (req, res) => {
   try {
     const aiCfg = await store.getAiConfig();
+    const envApiKey = process.env.MIMO_API_KEY || process.env.XIAOMIMIMO_API_KEY || '';
     res.json({
       apiKey: aiCfg.apiKey ? `${aiCfg.apiKey.slice(0, 8)}...${aiCfg.apiKey.slice(-4)}` : '',
-      apiKeySet: Boolean(aiCfg.apiKey),
-      model: aiCfg.model,
+      apiKeySet: Boolean(aiCfg.apiKey || envApiKey),
+      model: aiCfg.model || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL,
     });
   } catch (err) {
     console.error('AI config error:', err);
@@ -146,10 +151,11 @@ router.get('/config', checkAdmin, async (req, res) => {
 router.put('/config', checkAdmin, async (req, res) => {
   try {
     const updated = await store.updateAiConfig(req.body);
+    const envApiKey = process.env.MIMO_API_KEY || process.env.XIAOMIMIMO_API_KEY || '';
     res.json({
       apiKey: updated.apiKey ? `${updated.apiKey.slice(0, 8)}...${updated.apiKey.slice(-4)}` : '',
-      apiKeySet: Boolean(updated.apiKey),
-      model: updated.model,
+      apiKeySet: Boolean(updated.apiKey || envApiKey),
+      model: updated.model || process.env.MIMO_MODEL || DEFAULT_MIMO_MODEL,
     });
   } catch (err) {
     console.error('AI config update error:', err);
