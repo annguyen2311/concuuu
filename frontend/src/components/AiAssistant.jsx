@@ -6,7 +6,6 @@ export default function AiAssistant({ language = 'vi' }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [configured, setConfigured] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -14,7 +13,6 @@ export default function AiAssistant({ language = 'vi' }) {
     title: 'AI Assistant',
     placeholder: 'Type a message...',
     send: 'Send',
-    notConfigured: 'AI not configured. Set API key in Admin Panel.',
     thinking: 'Thinking...',
     error: 'Error connecting to AI',
     greeting: 'Hi! I\'m your AI assistant. Ask me anything about the server.',
@@ -22,35 +20,17 @@ export default function AiAssistant({ language = 'vi' }) {
     title: 'Trợ lý AI',
     placeholder: 'Nhập tin nhắn...',
     send: 'Gửi',
-    notConfigured: 'AI chưa được cấu hình. Đặt API key trong Admin Panel.',
     thinking: 'Đang suy nghĩ...',
     error: 'Lỗi kết nối AI',
     greeting: 'Xin chào! Tôi là trợ lý AI. Hãy hỏi tôi bất cứ điều gì về server.',
   };
 
-  const authConfig = () => {
-    const token = localStorage.getItem('token');
-    return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-  };
-
   useEffect(() => {
     if (!open) return undefined;
-
-    let cancelled = false;
-    setConfigured(null);
-
-    axios.get('/api/ai/config', authConfig())
-      .then((res) => {
-        if (!cancelled) setConfigured(res.data.apiKeySet);
-      })
-      .catch(() => {
-        if (!cancelled) setConfigured(false);
-      });
 
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 200);
 
     return () => {
-      cancelled = true;
       window.clearTimeout(focusTimer);
     };
   }, [open]);
@@ -72,7 +52,7 @@ export default function AiAssistant({ language = 'vi' }) {
       const res = await axios.post('/api/ai/chat', {
         message: text,
         conversationHistory: messages,
-      }, authConfig());
+      });
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {
       const errMsg = err.response?.data?.error || copy.error;
@@ -212,21 +192,7 @@ export default function AiAssistant({ language = 'vi' }) {
           flexDirection: 'column',
           gap: '12px',
         }}>
-          {configured === false && (
-            <div style={{
-              background: '#fef3c7',
-              color: '#92400e',
-              padding: '12px',
-              borderRadius: '10px',
-              fontSize: '13px',
-              fontWeight: 600,
-              textAlign: 'center',
-            }}>
-              {copy.notConfigured}
-            </div>
-          )}
-
-          {messages.length === 0 && configured !== false && (
+          {messages.length === 0 && (
             <div style={{
               display: 'flex',
               flexDirection: 'column',
@@ -301,7 +267,7 @@ export default function AiAssistant({ language = 'vi' }) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={copy.placeholder}
-              disabled={!configured || loading}
+              disabled={loading}
               style={{
                 flex: 1,
                 padding: '10px 14px',
@@ -316,7 +282,7 @@ export default function AiAssistant({ language = 'vi' }) {
             <button
               type="button"
               onClick={sendMessage}
-              disabled={!configured || loading || !input.trim()}
+              disabled={loading || !input.trim()}
               style={{
                 padding: '10px 16px',
                 borderRadius: '10px',
@@ -326,7 +292,7 @@ export default function AiAssistant({ language = 'vi' }) {
                 fontSize: '13px',
                 fontWeight: 700,
                 cursor: 'pointer',
-                opacity: (!configured || loading || !input.trim()) ? 0.4 : 1,
+                opacity: (loading || !input.trim()) ? 0.4 : 1,
                 transition: 'opacity 0.2s',
               }}
             >
