@@ -23,7 +23,8 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'AI API key is not configured on Vercel.' });
   }
 
-  const { message, conversationHistory = [] } = req.body || {};
+  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  const { message, conversationHistory = [] } = body;
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'Message is required' });
   }
