@@ -1,5 +1,5 @@
 const MIMO_BASE_URL = 'https://token-plan-sgp.xiaomimimo.com/v1';
-const DEFAULT_MIMO_MODEL = 'MiMo-V2.5-Pro';
+const DEFAULT_MIMO_MODEL = 'mimo-v2.5-pro';
 
 const sameLanguagePrompt = `You are the AI assistant for Cong dong sinh vien NTTU, a student community website.
 
