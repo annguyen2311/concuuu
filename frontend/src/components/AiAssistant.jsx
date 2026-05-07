@@ -15,14 +15,14 @@ export default function AiAssistant({ language = 'vi' }) {
     send: 'Send',
     thinking: 'Thinking...',
     error: 'Error connecting to AI',
-    greeting: 'Hi! I\'m your AI assistant. Ask me anything about the server.',
+    greeting: 'Ask about study topics or server information. I do not write or debug code.',
   } : {
     title: 'Trợ lý AI',
     placeholder: 'Nhập tin nhắn...',
     send: 'Gửi',
     thinking: 'Đang suy nghĩ...',
     error: 'Lỗi kết nối AI',
-    greeting: 'Xin chào! Tôi là trợ lý AI. Hãy hỏi tôi bất cứ điều gì về server.',
+    greeting: 'Hỏi về kiến thức học tập hoặc thông tin server. Trợ lý không viết hoặc debug code.',
   };
 
   useEffect(() => {
@@ -49,10 +49,17 @@ export default function AiAssistant({ language = 'vi' }) {
     setLoading(true);
 
     try {
-      const res = await axios.post('/api/ai/chat', {
+      let adminSessionToken = '';
+      try {
+        adminSessionToken = JSON.parse(localStorage.getItem('adminSession') || 'null')?.token || '';
+      } catch {
+        adminSessionToken = '';
+      }
+
+      const res = await axios.post(`${window.location.origin}/api/ai/chat`, {
         message: text,
         conversationHistory: messages,
-      });
+      }, adminSessionToken ? { headers: { Authorization: `Bearer ${adminSessionToken}` } } : undefined);
       setMessages((prev) => [...prev, { role: 'assistant', content: res.data.reply }]);
     } catch (err) {
       const errMsg = err.response?.data?.error || copy.error;
@@ -130,6 +137,8 @@ export default function AiAssistant({ language = 'vi' }) {
           display: 'flex',
           flexDirection: 'column',
           transition: 'right 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          visibility: open ? 'visible' : 'hidden',
+          pointerEvents: open ? 'auto' : 'none',
           background: 'var(--surface-elevated, #fff)',
           borderLeft: '1px solid var(--border-color, #e2e8f0)',
           boxShadow: open ? '-4px 0 24px rgba(0,0,0,0.12)' : 'none',

@@ -11,7 +11,7 @@ router.get('/mine', async (req, res) => {
     res.json(await store.listFeedback({ username: req.user.username }));
   } catch (e) {
     console.error('❌ Error fetching feedback:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
     res.json(feedback);
   } catch (e) {
     console.error('❌ Error creating feedback:', e.message);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

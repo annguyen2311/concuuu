@@ -78,7 +78,7 @@ const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenN
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--border-color)] bg-[var(--surface-overlay)]/90 backdrop-blur-xl">
+    <header className="header sticky top-0 z-40 border-b border-[var(--border-color)] bg-[var(--surface-overlay)]/90 backdrop-blur-xl">
       <div className="topbar-inner flex h-20 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <button
           type="button"
@@ -108,10 +108,11 @@ const TopBar = React.forwardRef(function TopBar({ user, language = 'vi', onOpenN
               key={action.key}
               type="button"
               onClick={action.onClick}
-              className={action.className || 'flex items-center gap-2 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:opacity-90'}
+              className={action.className || 'topbar-action-btn flex items-center gap-2 rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-strong)] px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:opacity-90'}
+              title={action.label}
             >
-              {action.icon && <span>{action.icon}</span>}
-              <span>{action.label}</span>
+              {action.icon && <span className="topbar-action-icon">{action.icon}</span>}
+              <span className="topbar-action-label">{action.label}</span>
             </button>
           ))}
           <button

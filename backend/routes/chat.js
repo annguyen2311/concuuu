@@ -28,7 +28,7 @@ router.put('/messages/:id/reaction', requireUser, requireSameUser((req) => req.b
         res.json(updatedMessage);
     } catch (e) {
         console.error('❌ Error reacting to message:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -47,7 +47,7 @@ router.post('/rooms/private', requireUser, requireSameUser((req) => req.body.use
         res.json(room);
     } catch (e) {
         console.error('❌ Error creating private room:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -66,7 +66,7 @@ router.post('/rooms/groups', requireUser, requireSameUser((req) => req.body.crea
         res.json(room);
     } catch (e) {
         console.error('❌ Error creating group room:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -93,7 +93,7 @@ router.put('/rooms/:roomId/members', requireUser, requireSameUser((req) => req.b
         res.json({ room: result.room, added: result.added || [] });
     } catch (e) {
         console.error('❌ Error adding group members:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -102,7 +102,7 @@ router.get('/rooms/list/all', requireUser, async (req, res) => {
         res.json(await store.listRooms(req.user.username));
     } catch (e) {
         console.error('❌ Error fetching rooms:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -124,7 +124,7 @@ router.get('/:room', requireUser, async (req, res) => {
         res.json(messages);
     } catch (e) {
         console.error('❌ Error fetching messages:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -143,7 +143,7 @@ router.post('/:room', requireUser, requireSameUser((req) => req.body.username), 
         res.json(msg);
     } catch (e) {
         console.error('❌ Error creating message:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

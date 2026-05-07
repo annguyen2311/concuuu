@@ -98,7 +98,7 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('Admin login error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -109,7 +109,7 @@ router.get('/overview', async (req, res) => {
     res.json(await store.getAdminOverview());
   } catch (err) {
     console.error('Admin overview error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -118,7 +118,7 @@ router.get('/theme', async (req, res) => {
     res.json(await store.getAppTheme());
   } catch (err) {
     console.error('Admin theme error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -127,7 +127,7 @@ router.put('/theme', async (req, res) => {
     res.json(await store.updateAppTheme(req.body || {}));
   } catch (err) {
     console.error('Admin update theme error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -147,7 +147,7 @@ router.get('/stats', async (req, res) => {
     });
   } catch (err) {
     console.error('Admin stats error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -156,7 +156,7 @@ router.get('/feedback', async (req, res) => {
     res.json(await store.listFeedback());
   } catch (err) {
     console.error('Admin feedback error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -175,7 +175,7 @@ router.patch('/feedback/:id', async (req, res) => {
     res.json(feedback);
   } catch (err) {
     console.error('Admin update feedback error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -194,7 +194,7 @@ router.delete('/feedback/:id', async (req, res) => {
     res.json({ message: 'Feedback deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete feedback error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -203,7 +203,7 @@ router.get('/users', async (req, res) => {
     res.json(await store.listAdminUsers());
   } catch (err) {
     console.error('Admin users error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -216,7 +216,8 @@ router.patch('/users/:username', async (req, res) => {
     res.json(user);
   } catch (err) {
     console.error('Admin update user error:', err.message);
-    res.status(err.statusCode || 500).json({ error: err.message });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: status >= 500 ? 'Internal server error' : 'Admin request rejected' });
   }
 });
 
@@ -231,7 +232,8 @@ router.delete('/users/:username', async (req, res) => {
     res.json({ message: 'User deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete user error:', err.message);
-    res.status(err.statusCode || 500).json({ error: err.message });
+    const status = err.statusCode || 500;
+    res.status(status).json({ error: status >= 500 ? 'Internal server error' : 'Admin request rejected' });
   }
 });
 
@@ -241,7 +243,7 @@ router.get('/admins', async (req, res) => {
     res.json(admins.map(({ password, ...admin }) => admin));
   } catch (err) {
     console.error('Admin list admins error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -273,7 +275,7 @@ router.post('/create-admin', async (req, res) => {
     res.json({ message: 'Admin created successfully', admin: safeAdmin });
   } catch (err) {
     console.error('Admin create admin error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -282,7 +284,7 @@ router.get('/posts', async (req, res) => {
     res.json(await store.listPosts());
   } catch (err) {
     console.error('Admin posts error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -299,7 +301,7 @@ router.delete('/posts/:id', async (req, res) => {
     res.json({ message: 'Post deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete post error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -308,7 +310,7 @@ router.get('/jobs', async (req, res) => {
     res.json(await store.listJobs());
   } catch (err) {
     console.error('Admin jobs error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -325,7 +327,7 @@ router.delete('/jobs/:id', async (req, res) => {
     res.json({ message: 'Job deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete job error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -334,7 +336,7 @@ router.get('/rooms', async (req, res) => {
     res.json(await store.listAdminRooms());
   } catch (err) {
     console.error('Admin rooms error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -361,7 +363,7 @@ router.post('/rooms', async (req, res) => {
     res.json(room);
   } catch (err) {
     console.error('Admin create room error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -381,7 +383,7 @@ router.get('/rooms/:roomId/messages', async (req, res) => {
     });
   } catch (err) {
     console.error('Admin room messages error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -394,7 +396,7 @@ router.delete('/rooms/:roomId', async (req, res) => {
     res.json({ message: 'Room deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete room error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -403,7 +405,7 @@ router.get('/announcements', async (req, res) => {
     res.json(await store.listAnnouncements());
   } catch (err) {
     console.error('Admin announcements error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -425,7 +427,7 @@ router.post('/announcements', async (req, res) => {
     res.json(announcement);
   } catch (err) {
     console.error('Admin create announcement error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -442,7 +444,7 @@ router.delete('/announcements/:id', async (req, res) => {
     res.json({ message: 'Announcement deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete announcement error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -451,7 +453,7 @@ router.get('/events', async (req, res) => {
     res.json(await store.listEvents());
   } catch (err) {
     console.error('Admin events error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -469,7 +471,7 @@ router.post('/events', async (req, res) => {
     }));
   } catch (err) {
     console.error('Admin create event error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -486,7 +488,7 @@ router.put('/events/:id', async (req, res) => {
     res.json(event);
   } catch (err) {
     console.error('Admin update event error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -503,7 +505,7 @@ router.delete('/events/:id', async (req, res) => {
     res.json({ message: 'Event deleted successfully', ...result });
   } catch (err) {
     console.error('Admin delete event error:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

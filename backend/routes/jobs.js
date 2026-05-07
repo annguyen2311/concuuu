@@ -3,6 +3,11 @@ const store = require('../db/store');
 const { requireSameUser, requireUser } = require('../middleware/auth');
 const router = express.Router();
 
+const toId = (value) => {
+    const id = Number.parseInt(value, 10);
+    return Number.isFinite(id) && id >= 1 ? id : null;
+};
+
 const buildApplicationMessage = (username, job) => {
     const companyText = job.company ? ` tại ${job.company}` : '';
     return `Xin chào, mình là ${username}. Mình muốn ứng tuyển vị trí "${job.title}"${companyText}.`;
@@ -13,20 +18,25 @@ router.get('/', async (req, res) => {
         res.json(await store.listJobs());
     } catch (e) {
         console.error('❌ Error fetching jobs:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 router.get('/:id', async (req, res) => {
     try {
-        const job = await store.findJobById(parseInt(req.params.id, 10));
+        const jobId = toId(req.params.id);
+        if (!jobId) {
+            return res.status(400).json({ error: 'Valid job id required' });
+        }
+
+        const job = await store.findJobById(jobId);
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
         res.json(job);
     } catch (e) {
         console.error('❌ Error fetching job:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -59,7 +69,7 @@ router.post('/', requireUser, requireSameUser((req) => req.body.postedBy), async
         res.json(job);
     } catch (e) {
         console.error('❌ Error creating job:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -70,7 +80,12 @@ router.post('/:id/apply', requireUser, requireSameUser((req) => req.body.usernam
             return res.status(400).json({ error: 'Username required' });
         }
 
-        const job = await store.findJobById(parseInt(req.params.id, 10));
+        const jobId = toId(req.params.id);
+        if (!jobId) {
+            return res.status(400).json({ error: 'Valid job id required' });
+        }
+
+        const job = await store.findJobById(jobId);
         if (!job) {
             return res.status(404).json({ error: 'Job not found' });
         }
@@ -100,7 +115,7 @@ router.post('/:id/apply', requireUser, requireSameUser((req) => req.body.usernam
         res.json({ msg: 'Application submitted', room, message });
     } catch (e) {
         console.error('❌ Error applying:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

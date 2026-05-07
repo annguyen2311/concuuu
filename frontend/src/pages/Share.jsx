@@ -291,7 +291,7 @@ function Share({ language = 'vi', topBarRef }) {
             ) : visiblePosts.length === 0 ? (
               <EmptyState text={copy.empty} />
             ) : visiblePosts.map((post) => (
-              <article key={post._id} className="rounded-[1.25rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-soft)]">
+              <article key={post._id} className="min-w-0 rounded-[1.25rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-soft)]">
                 <header className="mb-4 flex items-center gap-3">
                   <UserAvatar value={post.author} name={post.author || 'User'} className="h-11 w-11 text-sm" />
                   <div className="min-w-0 flex-1">

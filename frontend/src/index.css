@@ -1,5 +1,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
   --page-bg: #f3f6fb;
   --page-gradient: radial-gradient(circle at top, rgba(59, 130, 246, 0.12), transparent 32%), radial-gradient(circle at right top, rgba(168, 85, 247, 0.14), transparent 26%);
@@ -1155,6 +1159,22 @@ canvas {
     height: 2.25rem;
   }
 
+  .topbar-action-btn {
+    min-height: 2.5rem;
+    width: 2.5rem;
+    padding: 0 !important;
+    border-radius: 0.85rem;
+  }
+
+  .topbar-action-label {
+    display: none;
+  }
+
+  .topbar-action-icon {
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
   .admin-toolbar {
     grid-template-columns: 1fr;
   }
@@ -1201,6 +1221,14 @@ canvas {
 
   .main-container {
     padding: 1rem 0.75rem;
+  }
+
+  .main-container :where(article, aside, section) {
+    min-width: 0;
+  }
+
+  .main-container :where(h1, h2, h3, p) {
+    overflow-wrap: anywhere;
   }
 
   .card,
@@ -1300,6 +1328,20 @@ canvas {
 
   .card {
     border-radius: 0.85rem;
+  }
+
+  .friend-list-row {
+    flex-wrap: wrap;
+  }
+
+  .friend-row-actions {
+    width: 100%;
+    padding-left: 3.5rem;
+  }
+
+  .friend-row-actions > button {
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   .stat-card {
@@ -1447,4 +1489,3 @@ canvas {
     display: flex !important;
   }
 }
-

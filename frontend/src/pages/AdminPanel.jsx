@@ -77,7 +77,7 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved, languag
   const [messageViewer, setMessageViewer] = useState({ open: false, loading: false, room: null, messages: [] });
   const [adminForm, setAdminForm] = useState({ username: '', email: '', password: '', role: 'admin' });
   const [themeForm, setThemeForm] = useState({ ...defaultTheme, ...(appTheme || {}) });
-  const [aiConfig, setAiConfig] = useState({ apiKey: '', apiKeySet: false, model: 'MiMo-V2.5-Pro' });
+  const [aiConfig, setAiConfig] = useState({ apiKey: '', apiKeySet: false, model: 'mimo-v2.5-pro' });
   const [aiConfigLoading, setAiConfigLoading] = useState(false);
   const noticeTimerRef = useRef(null);
 
@@ -464,9 +464,9 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved, languag
     try {
       setAiConfigLoading(true);
       const res = await axios.get('/api/ai/config', adminConfig());
-      setAiConfig({ apiKey: '', apiKeySet: res.data.apiKeySet, model: res.data.model || 'MiMo-V2.5-Pro' });
+      setAiConfig({ apiKey: '', apiKeySet: res.data.apiKeySet, model: res.data.model || 'mimo-v2.5-pro' });
     } catch {
-      setAiConfig({ apiKey: '', apiKeySet: false, model: 'MiMo-V2.5-Pro' });
+      setAiConfig({ apiKey: '', apiKeySet: false, model: 'mimo-v2.5-pro' });
     } finally {
       setAiConfigLoading(false);
     }
@@ -1118,8 +1118,8 @@ function AdminPanel({ currentUser: signedInUser, appTheme, onThemeSaved, languag
                     value={aiConfig.model}
                     onChange={(event) => setAiConfig((prev) => ({ ...prev, model: event.target.value }))}
                   >
-                    <option value="MiMo-V2.5-Pro">MiMo-V2.5-Pro</option>
-                    <option value="MiMo-V2-Flash">MiMo-V2-Flash</option>
+                    <option value="mimo-v2.5-pro">mimo-v2.5-pro</option>
+                    <option value="mimo-v2-flash">mimo-v2-flash</option>
                   </select>
                 </label>
                 <div className="admin-form-row">

@@ -130,6 +130,27 @@ const fileToDataUrl = (file, copy) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+const normalizeTags = (tags) => (
+  Array.isArray(tags)
+    ? tags
+      .map((tag) => {
+        if (typeof tag === 'string') {
+          return { name: tag.trim(), color: '#3B82F6' };
+        }
+        return {
+          name: String(tag?.name || '').trim(),
+          color: String(tag?.color || '#3B82F6').trim() || '#3B82F6',
+        };
+      })
+      .filter((tag) => tag.name)
+    : []
+);
+
+const normalizeRequests = (requests) => ({
+  incoming: Array.isArray(requests?.incoming) ? requests.incoming : (Array.isArray(requests) ? requests : []),
+  outgoing: Array.isArray(requests?.outgoing) ? requests.outgoing : [],
+});
+
 function AvatarPreview({ value, username, className = 'h-24 w-24 text-2xl' }) {
   if (value && value.startsWith('data:image')) {
     return (
@@ -165,7 +186,7 @@ function Profile({ language = 'vi' }) {
   const joinDateLabel = joinDate && !Number.isNaN(joinDate.getTime())
     ? joinDate.toLocaleDateString(locale)
     : copy.unknownDate;
-  const profileTags = profile?.tags || [];
+  const profileTags = normalizeTags(profile?.tags);
   const profileLevel = getLevelInfo(profile);
 
   const filteredUsers = useMemo(() => {
@@ -230,7 +251,7 @@ function Profile({ language = 'vi' }) {
         major: res.data.major || '',
         avatar: res.data.avatar || '',
         coverImage: res.data.coverImage || '',
-        tags: res.data.tags || [],
+        tags: normalizeTags(res.data.tags),
       });
       setUserPosts(res.data.posts || []);
     } catch (err) {
@@ -250,7 +271,7 @@ function Profile({ language = 'vi' }) {
       ]);
       setAllUsers(usersRes.data || []);
       setFriends(friendsRes.data || []);
-      setRequests(requestsRes.data || { incoming: [], outgoing: [] });
+      setRequests(normalizeRequests(requestsRes.data));
     } catch (err) {
       console.error('Error loading social data:', err);
     }
@@ -310,7 +331,7 @@ function Profile({ language = 'vi' }) {
       major: profile?.major || '',
       avatar: profile?.avatar || '',
       coverImage: profile?.coverImage || '',
-      tags: profile?.tags || [],
+      tags: normalizeTags(profile?.tags),
     });
     setIsEditing(false);
   };

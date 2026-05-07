@@ -3,25 +3,35 @@ const store = require('../db/store');
 const { requireSameUser, requireUser } = require('../middleware/auth');
 const router = express.Router();
 
+const toId = (value) => {
+    const id = Number.parseInt(value, 10);
+    return Number.isFinite(id) && id >= 1 ? id : null;
+};
+
 router.get('/', async (req, res) => {
     try {
         res.json(await store.listPosts());
     } catch (e) {
         console.error('❌ Error fetching posts:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 router.get('/:id', async (req, res) => {
     try {
-        const post = await store.findPostById(parseInt(req.params.id, 10));
+        const postId = toId(req.params.id);
+        if (!postId) {
+            return res.status(400).json({ error: 'Valid post id required' });
+        }
+
+        const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
         }
         res.json(post);
     } catch (e) {
         console.error('❌ Error fetching post:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -44,7 +54,7 @@ router.post('/', requireUser, requireSameUser((req) => req.body.author), async (
         res.json(post);
     } catch (e) {
         console.error('❌ Error creating post:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -55,7 +65,11 @@ router.put('/:id/like', requireUser, requireSameUser((req) => req.body.username)
             return res.status(400).json({ error: 'Username required' });
         }
 
-        const postId = parseInt(req.params.id, 10);
+        const postId = toId(req.params.id);
+        if (!postId) {
+            return res.status(400).json({ error: 'Valid post id required' });
+        }
+
         const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
@@ -65,7 +79,7 @@ router.put('/:id/like', requireUser, requireSameUser((req) => req.body.username)
         res.json(updatedPost);
     } catch (e) {
         console.error('❌ Error liking post:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -76,7 +90,11 @@ router.post('/:id/comment', requireUser, requireSameUser((req) => req.body.user)
             return res.status(400).json({ error: 'User and comment text required' });
         }
 
-        const postId = parseInt(req.params.id, 10);
+        const postId = toId(req.params.id);
+        if (!postId) {
+            return res.status(400).json({ error: 'Valid post id required' });
+        }
+
         const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
@@ -87,13 +105,17 @@ router.post('/:id/comment', requireUser, requireSameUser((req) => req.body.user)
         res.json(comment);
     } catch (e) {
         console.error('❌ Error commenting:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 router.delete('/:id', requireUser, async (req, res) => {
     try {
-        const postId = parseInt(req.params.id, 10);
+        const postId = toId(req.params.id);
+        if (!postId) {
+            return res.status(400).json({ error: 'Valid post id required' });
+        }
+
         const post = await store.findPostById(postId);
         if (!post) {
             return res.status(404).json({ error: 'Post not found' });
@@ -105,7 +127,7 @@ router.delete('/:id', requireUser, async (req, res) => {
         res.json({ message: 'Post deleted successfully' });
     } catch (e) {
         console.error('❌ Error deleting post:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

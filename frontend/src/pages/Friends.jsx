@@ -189,25 +189,27 @@ function Friends({ language = 'vi' }) {
       )}
 
       <div className="grid gap-6 xl:grid-cols-[24rem_minmax(0,1fr)]">
-        <aside className="space-y-6">
+        <aside className="min-w-0 space-y-6">
           <section className="rounded-[1.25rem] border border-[var(--border-color)] bg-[var(--surface-elevated)] p-5 shadow-[var(--shadow-soft)]">
             <h2 className="mb-4 text-lg font-black text-[var(--text-primary)]">{copy.friends}</h2>
             <div className="grid gap-3">
               {friends.length === 0 ? (
                 <p className="text-sm font-semibold text-[var(--text-muted)]">{copy.noFriends}</p>
               ) : friends.map((friend) => (
-                <div key={friend.username} className="flex items-center gap-3 rounded-2xl bg-[var(--surface-muted)] p-3">
+                <div key={friend.username} className="friend-list-row flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--surface-muted)] p-3">
                   <UserAvatar value={friend.avatar} name={friend.username} className="h-11 w-11 text-sm" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-black text-[var(--text-primary)]">{friend.username}</p>
                     <p className="truncate text-xs font-semibold text-[var(--text-muted)]">{friend.school || copy.member}</p>
                   </div>
-                  <button type="button" onClick={() => startPrivateChat(friend.username)} className="rounded-xl bg-[var(--accent)] px-3 py-2 text-sm font-bold text-white">
-                    {copy.chat}
-                  </button>
-                  <button type="button" onClick={() => removeFriend(friend.username)} className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
-                    {copy.remove}
-                  </button>
+                  <div className="friend-row-actions flex shrink-0 gap-2">
+                    <button type="button" onClick={() => startPrivateChat(friend.username)} className="rounded-xl bg-[var(--accent)] px-3 py-2 text-sm font-bold text-white">
+                      {copy.chat}
+                    </button>
+                    <button type="button" onClick={() => removeFriend(friend.username)} className="rounded-xl bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                      {copy.remove}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -219,15 +221,17 @@ function Friends({ language = 'vi' }) {
               {(requests.incoming || []).length === 0 ? (
                 <p className="text-sm font-semibold text-[var(--text-muted)]">{copy.noIncoming}</p>
               ) : requests.incoming.map((person) => (
-                <div key={person.username} className="flex items-center gap-3 rounded-2xl bg-[var(--surface-muted)] p-3">
+                <div key={person.username} className="friend-list-row flex min-w-0 items-center gap-3 rounded-2xl bg-[var(--surface-muted)] p-3">
                   <UserAvatar value={person.avatar} name={person.username} className="h-11 w-11 text-sm" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-black text-[var(--text-primary)]">{person.username}</p>
                     <p className="truncate text-xs font-semibold text-[var(--text-muted)]">{copy.incomingStatus}</p>
                   </div>
-                  <button type="button" onClick={() => acceptRequest(person.username)} className="btn-success px-4 py-2 text-sm">
-                    {copy.accept}
-                  </button>
+                  <div className="friend-row-actions flex shrink-0">
+                    <button type="button" onClick={() => acceptRequest(person.username)} className="btn-success px-4 py-2 text-sm">
+                      {copy.accept}
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -246,7 +250,7 @@ function Friends({ language = 'vi' }) {
             ) : filteredPeople.length === 0 ? (
               <EmptyState text={copy.noPeople} />
             ) : filteredPeople.map((person) => (
-              <article key={person.username} className="flex items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-muted)] p-4">
+              <article key={person.username} className="friend-list-row flex min-w-0 items-center gap-3 rounded-2xl border border-[var(--border-color)] bg-[var(--surface-muted)] p-4">
                 <UserAvatar value={person.avatar} name={person.username} className="h-12 w-12 text-sm" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-black text-[var(--text-primary)]">{person.username}</p>

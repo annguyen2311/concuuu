@@ -15,7 +15,7 @@ router.get('/', optionalUser, async (req, res) => {
         res.json(await store.listDiscoverableUsers(req.query.viewer || req.user?.username));
     } catch (e) {
         console.error('❌ Error fetching users:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -45,7 +45,7 @@ router.get('/:username', optionalUser, async (req, res) => {
         });
     } catch (e) {
         console.error('❌ Error fetching profile:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -58,7 +58,7 @@ router.get('/:username/friends', async (req, res) => {
         res.json(await store.listFriends(req.params.username));
     } catch (e) {
         console.error('❌ Error fetching friends:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -71,7 +71,7 @@ router.get('/:username/friend-requests', requireUser, requireSameUser((req) => r
         res.json(await store.listFriendRequests(req.params.username));
     } catch (e) {
         console.error('❌ Error fetching friend requests:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -85,7 +85,7 @@ router.post('/:username/friend-requests', requireUser, requireSameUser((req) => 
         res.json(result);
     } catch (e) {
         console.error('❌ Error sending friend request:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -98,7 +98,7 @@ router.put('/:username/friend-requests/:requester/accept', requireUser, requireS
         res.json(result);
     } catch (e) {
         console.error('❌ Error accepting friend request:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -107,7 +107,7 @@ router.delete('/:username/friends/:friendUsername', requireUser, requireSameUser
         res.json(await store.removeFriendship(req.params.username, req.params.friendUsername));
     } catch (e) {
         console.error('❌ Error removing friendship:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -120,7 +120,7 @@ router.get('/:username/settings', requireUser, requireSameUser((req) => req.para
         res.json(await store.getUserSettings(req.params.username));
     } catch (e) {
         console.error('❌ Error fetching settings:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -133,7 +133,7 @@ router.put('/:username/settings', requireUser, requireSameUser((req) => req.para
         res.json(await store.updateUserSettings(req.params.username, req.body || {}));
     } catch (e) {
         console.error('❌ Error updating settings:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -146,7 +146,7 @@ router.put('/:username/tags', requireUser, requireSameUser((req) => req.params.u
         res.json(await store.replaceUserTags(req.params.username, req.body.tags));
     } catch (e) {
         console.error('❌ Error updating tags:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -159,7 +159,7 @@ router.get('/:username/tags', async (req, res) => {
         res.json(await store.listUserTags(req.params.username));
     } catch (e) {
         console.error('❌ Error fetching tags:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -187,7 +187,7 @@ router.put('/:username/password', requireUser, requireSameUser((req) => req.para
         res.json({ msg: 'Password updated successfully' });
     } catch (e) {
         console.error('❌ Error updating password:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -201,7 +201,7 @@ router.put('/:username', requireUser, requireSameUser((req) => req.params.userna
         res.json(user);
     } catch (e) {
         console.error('❌ Error updating profile:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
@@ -211,7 +211,7 @@ router.get('/:username/posts', async (req, res) => {
         res.json(posts);
     } catch (e) {
         console.error('❌ Error fetching user posts:', e.message);
-        res.status(500).json({ error: e.message });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 

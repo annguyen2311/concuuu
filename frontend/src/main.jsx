@@ -4,8 +4,9 @@ import { BrowserRouter } from 'react-router-dom';
 import axios from 'axios';
 import App from './App';
 import './index.css';
+import { getApiBaseUrl } from './utils/env';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = getApiBaseUrl();
 if (API_URL) {
   axios.defaults.baseURL = API_URL;
 }

@@ -1569,8 +1569,13 @@ const defaultTheme = {
 
 const defaultAiConfig = {
   apiKey: '',
-  model: 'MiMo-V2.5-Pro',
+  model: 'mimo-v2.5-pro',
 };
+
+function normalizeAiModel(value) {
+  const model = String(value || defaultAiConfig.model).trim().slice(0, 100) || defaultAiConfig.model;
+  return model.toLowerCase().startsWith('mimo-') ? model.toLowerCase() : model;
+}
 
 async function getAppTheme() {
   const { rows } = await pool.query("SELECT value FROM app_settings WHERE key = 'theme'");
@@ -1626,7 +1631,7 @@ async function updateAiConfig(updates = {}) {
   const current = await getAiConfig();
   const next = {
     apiKey: String(updates.apiKey ?? current.apiKey ?? '').trim().slice(0, 500),
-    model: String(updates.model ?? current.model ?? defaultAiConfig.model).trim().slice(0, 100) || defaultAiConfig.model,
+    model: normalizeAiModel(updates.model ?? current.model ?? defaultAiConfig.model),
   };
 
   await pool.query(`

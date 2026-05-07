@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import UserAvatar, { getAvatarText, isImageSource } from '../components/UserAvatar';
+import { getApiBaseUrl } from '../utils/env';
 
 const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '👏'];
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '👏'];
@@ -370,7 +371,7 @@ function ChatRoom({ language = 'vi' }) {
   };
 
   useEffect(() => {
-    const socketUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    const socketUrl = getApiBaseUrl() || window.location.origin;
     const socket = io(socketUrl, {
       auth: { token: localStorage.getItem('token') },
     });
