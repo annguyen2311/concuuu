@@ -5,6 +5,16 @@ const sameLanguagePrompt = `You are the AI assistant for Cong dong sinh vien NTT
 
 Help users with study, campus life, posts, jobs, and general questions. Respond concisely in the same language the user writes in, especially Vietnamese when the user writes Vietnamese.`;
 
+async function readJsonBody(req) {
+  if (req.body && typeof req.body !== 'string') return req.body;
+  if (typeof req.body === 'string') return JSON.parse(req.body || '{}');
+
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const raw = Buffer.concat(chunks).toString('utf8');
+  return raw ? JSON.parse(raw) : {};
+}
+
 module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -23,7 +33,7 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({ error: 'AI API key is not configured on Vercel.' });
   }
 
-  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+  const body = await readJsonBody(req);
   const { message, conversationHistory = [] } = body;
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'Message is required' });
